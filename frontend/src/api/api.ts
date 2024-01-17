@@ -1,4 +1,4 @@
-import { UserInfo, ConversationRequest, Conversation, ChatMessage, CosmosDBHealth, CosmosDBStatus } from "./models";
+import { UserInfo, ConversationRequest, Conversation, ChatMessage, CosmosDBHealth, CosmosDBStatus, CitationConfig } from "./models";
 import { chatHistorySampleData } from "../constants/chatHistory";
 
 export async function conversationApi(options: ConversationRequest, abortSignal: AbortSignal): Promise<Response> {
@@ -310,6 +310,7 @@ export const frontendSettings = async (): Promise<Response | null> => {
 
     return response
 }
+
 export const historyMessageFeedback = async (messageId: string, feedback: string): Promise<Response> => {
     const response = await fetch("/history/message_feedback", {
         method: "POST",
@@ -334,4 +335,29 @@ export const historyMessageFeedback = async (messageId: string, feedback: string
         return errRes;
     })
     return response;
+}
+
+export async function getCitationConfig(): Promise<CitationConfig> {
+    const response = await fetch('/citationConfig');
+    if (!response.ok) {
+        console.log("Citation config could not be retrieved.");
+        let config: CitationConfig = {
+            FileStorageBaseUrl: null,
+            FileLinkBaseUrl: null,
+            FileLinkUrlAppendix: null
+        };
+        return config;
+    }
+
+    const payload = await response.json();
+    return payload;
+}
+
+export async function getStorageSas(): Promise<string> {
+    const response = await fetch('/storageSas');
+    if (!response.ok) {
+        return "";
+    }
+    const sas = await response.text();
+    return sas;
 }

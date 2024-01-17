@@ -25,7 +25,10 @@ import {
     historyClear,
     ChatHistoryLoadingState,
     CosmosDBStatus,
-    ErrorMessage
+    ErrorMessage,
+    CitationConfig,
+    getCitationConfig,
+    getStorageSas
 } from "../../api";
 import { Answer } from "../../components/Answer";
 import { QuestionInput } from "../../components/QuestionInput";
@@ -54,6 +57,8 @@ const Chat = () => {
     const [clearingChat, setClearingChat] = useState<boolean>(false);
     const [hideErrorDialog, { toggle: toggleErrorDialog }] = useBoolean(true);
     const [errorMsg, setErrorMsg] = useState<ErrorMessage | null>()
+    const [citationConfig, setCitationConfig] = useState<CitationConfig>({FileStorageBaseUrl: null, FileLinkBaseUrl: null, FileLinkUrlAppendix: null});
+    const [storageSas, setStorageSas] = useState<string>("");
 
     const errorDialogContentProps = {
         type: DialogType.close,
@@ -99,12 +104,22 @@ const Chat = () => {
             return;
         }
         const userInfoList = await getUserInfo();
-        if (userInfoList.length === 0 && window.location.hostname !== "127.0.0.1") {
+        if (userInfoList.length === 0 && window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost") {
             setShowAuthMessage(true);
         }
         else {
             setShowAuthMessage(false);
         }
+    }
+
+    const initCitationConfig = async () => {
+        let config = await getCitationConfig();
+        setCitationConfig(config);
+    }
+
+    const initStorageSas = async () => {
+        let sas = await getStorageSas();
+        setStorageSas(sas);
     }
 
     let assistantMessage = {} as ChatMessage
@@ -471,6 +486,22 @@ const Chat = () => {
         setIsLoading(false);
     }
 
+    const getQueryParam = (url: string, param: string) => {
+        var queryString = url.split('?')[1];
+        if (queryString) {
+            queryString = queryString.toLowerCase();
+            param = param.toLowerCase().trim();
+            var keyValuePairs = queryString.split('&');
+            for (var i = 0; i < keyValuePairs.length; i++) {
+                var keyValuePair = keyValuePairs[i].split('=');
+                if (keyValuePair[0] === param) {
+                    return keyValuePair[1] || '';
+                }
+            }
+        }
+        return null;
+    }
+
     useEffect(() => {
         if (appStateContext?.state.currentChat) {
             setMessages(appStateContext.state.currentChat.messages)
@@ -531,15 +562,50 @@ const Chat = () => {
 
     useEffect(() => {
         if (AUTH_ENABLED !== undefined) getUserInfoList();
+        initCitationConfig();
+        initStorageSas();
     }, [AUTH_ENABLED]);
 
     useLayoutEffect(() => {
         chatMessageStreamEnd.current?.scrollIntoView({ behavior: "smooth" })
     }, [showLoadingMessage, processMessages]);
 
-    const onShowCitation = (citation: Citation) => {
-        setActiveCitation(citation);
-        setIsCitationPanelOpen(true);
+    const onShowCitation = (citation: Citation, usePanel: boolean = true) => {
+        if (usePanel) {
+            setActiveCitation(citation);
+            setIsCitationPanelOpen(true);
+        }
+        else {
+            if (null != window && null != citation &&
+                citationConfig.FileStorageBaseUrl != null && citationConfig.FileStorageBaseUrl.length > 0 &&
+                citationConfig.FileLinkBaseUrl != null && citationConfig.FileLinkBaseUrl.length > 0)
+            {
+                var linkTarget = getQueryParam(window.location.href, 'link-target');
+                if (linkTarget == null) {
+                    linkTarget = '_blank';
+                }
+                if (citation.url?.toLowerCase().endsWith('.md')) {
+                    var relFilePath = citation.url?.replace(citationConfig.FileStorageBaseUrl, '');
+                    var url = citationConfig.FileLinkBaseUrl + relFilePath;
+                    if (citationConfig.FileLinkUrlAppendix != null && citationConfig.FileLinkUrlAppendix.length > 0) {
+                        url += citationConfig.FileLinkUrlAppendix;
+                    }
+                    var result = window.open(url, linkTarget);
+                    if (result) {
+                        result.focus();
+                    }
+                }
+                else if (citation.url?.toLowerCase().endsWith('.pdf')) {
+                    var result = window.open(citation.url + '?' + storageSas, linkTarget);
+                    if (result) {
+                        result.focus();
+                    }
+                }
+                else {
+                    console.error('Unhandled file type, navigation to data source not possible');
+                }
+            }
+        }
     };
 
     const onViewSource = (citation: Citation) => {
@@ -568,18 +634,7 @@ const Chat = () => {
     return (
         <div className={styles.container} role="main">
             {showAuthMessage ? (
-                <Stack className={styles.chatEmptyState}>
-                    <ShieldLockRegular className={styles.chatIcon} style={{ color: 'darkorange', height: "200px", width: "200px" }} />
-                    <h1 className={styles.chatEmptyStateTitle}>Authentication Not Configured</h1>
-                    <h2 className={styles.chatEmptyStateSubtitle}>
-                        This app does not have authentication configured. Please add an identity provider by finding your app in the
-                        <a href="https://portal.azure.com/" target="_blank"> Azure Portal </a>
-                        and following
-                        <a href="https://learn.microsoft.com/en-us/azure/app-service/scenario-secure-app-authentication-app-service#3-configure-authentication-and-authorization" target="_blank"> these instructions</a>.
-                    </h2>
-                    <h2 className={styles.chatEmptyStateSubtitle} style={{ fontSize: "20px" }}><strong>Authentication configuration takes a few minutes to apply. </strong></h2>
-                    <h2 className={styles.chatEmptyStateSubtitle} style={{ fontSize: "20px" }}><strong>If you deployed in the last 10 minutes, please wait and reload the page after 10 minutes.</strong></h2>
-                </Stack>
+                <p>Authentication is not configured correctly for this app. Please add an identity provider for the app in Microsoft Entra.</p>
             ) : (
                 <Stack horizontal className={styles.chatRoot}>
                     <div className={styles.chatContainer}>

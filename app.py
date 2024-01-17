@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import logging
@@ -9,6 +10,8 @@ from azure.identity import DefaultAzureCredential
 from base64 import b64encode
 from flask import Flask, Response, request, jsonify, send_from_directory
 from dotenv import load_dotenv
+from azure.storage.blob import BlobServiceClient, generate_container_sas, ContainerSasPermissions
+from urllib.parse import urlparse
 
 from backend.auth.auth_utils import get_authenticated_user_details
 from backend.history.cosmosdbservice import CosmosConversationClient
@@ -58,6 +61,10 @@ AZURE_SEARCH_VECTOR_COLUMNS = os.environ.get("AZURE_SEARCH_VECTOR_COLUMNS")
 AZURE_SEARCH_QUERY_TYPE = os.environ.get("AZURE_SEARCH_QUERY_TYPE")
 AZURE_SEARCH_PERMITTED_GROUPS_COLUMN = os.environ.get("AZURE_SEARCH_PERMITTED_GROUPS_COLUMN")
 AZURE_SEARCH_STRICTNESS = os.environ.get("AZURE_SEARCH_STRICTNESS", SEARCH_STRICTNESS)
+
+AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL = os.environ.get("AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL")
+AZURE_SEARCH_CITATION_FILE_LINK_BASEURL = os.environ.get("AZURE_SEARCH_CITATION_FILE_LINK_BASEURL")
+AZURE_SEARCH_CITATION_FILE_LINK_URLAPPENDIX = os.environ.get("AZURE_SEARCH_CITATION_FILE_LINK_URLAPPENDIX")
 
 # AOAI Integration Settings
 AZURE_OPENAI_RESOURCE = os.environ.get("AZURE_OPENAI_RESOURCE")
@@ -594,7 +601,6 @@ def conversation_without_data(request_body):
     else:
         return Response(stream_without_data(response, history_metadata), mimetype='text/event-stream')
 
-
 @app.route("/conversation", methods=["GET", "POST"])
 def conversation():
     request_body = request.json
@@ -911,6 +917,63 @@ def generate_title(conversation_messages):
         return title
     except Exception as e:
         return messages[-2]['content']
+
+
+# Parse the provided URL
+def parse_url(url):
+    parsed_url = urlparse(url)
+    account_name = parsed_url.netloc.split('.')[0]
+    container_name = parsed_url.path.split('/')[1]
+    return account_name, container_name
+
+# Generate SAS token
+def generate_sas_token(account_name, container_name, credential, expiresAfterMinutes = 30):
+    sas_token = ""
+    # Create Blob service client
+    blob_service_client = BlobServiceClient(account_url=f"https://{account_name}.blob.core.windows.net", credential=credential)
+    # Get user delegation key
+    delegation_key_start_time = datetime.datetime.now(datetime.timezone.utc)
+    delegation_key_expiry_time = delegation_key_start_time + datetime.timedelta(minutes=expiresAfterMinutes)
+    user_delegation_key = blob_service_client.get_user_delegation_key(
+        key_start_time=delegation_key_start_time,
+        key_expiry_time=delegation_key_expiry_time
+    )
+    # Request storage container SAS
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    expiry_time = start_time + datetime.timedelta(minutes=expiresAfterMinutes)
+    sas_token = generate_container_sas(
+        blob_service_client.account_name,
+        container_name,
+        user_delegation_key=user_delegation_key,
+        permission=ContainerSasPermissions(read=True),
+        expiry=expiry_time,
+        start=start_time
+    )
+    return sas_token
+
+@app.route("/citationConfig", methods=["GET"])
+def citationConfig():
+    try:
+        return jsonify(FileStorageBaseUrl=AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL,
+                       FileLinkBaseUrl=AZURE_SEARCH_CITATION_FILE_LINK_BASEURL,
+                       FileLinkUrlAppendix=AZURE_SEARCH_CITATION_FILE_LINK_URLAPPENDIX), 200
+    except Exception as e:
+        details = jsonify({"error": str(e)})
+        logging.exception("Exception in /citationConfig: ", details)
+        return details, 500
+
+@app.route("/storageSas", methods=["GET"])
+def storageSas():
+    try:
+        account_name, container_name = parse_url(AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL)
+        credential = DefaultAzureCredential()
+        sas_token = generate_sas_token(account_name, container_name, credential, 30)
+        return sas_token, 200
+    except Exception as e:
+        details = jsonify({"error": str(e)})
+        logging.exception("Exception in /storageSas: ", details)
+        return details, 500
+
 
 if __name__ == "__main__":
     app.run()

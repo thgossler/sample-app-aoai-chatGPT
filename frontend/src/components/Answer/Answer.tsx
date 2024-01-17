@@ -62,16 +62,19 @@ export const Answer = ({
         setFeedbackState(currentFeedbackState)
     }, [appStateContext?.state.feedbackState, feedbackState, answer.message_id]);
 
-    const createCitationFilepath = (citation: Citation, index: number, truncate: boolean = false) => {
+    const createCitationFilepath = (citation: Citation, index: number, truncate: boolean = false, omitPart: boolean = false) => {
         let citationFilename = "";
 
         if (citation.filepath && citation.chunk_id) {
             if (truncate && citation.filepath.length > filePathTruncationLimit) {
                 const citationLength = citation.filepath.length;
-                citationFilename = `${citation.filepath.substring(0, 20)}...${citation.filepath.substring(citationLength -20)} - Part ${parseInt(citation.chunk_id) + 1}`;
+                citationFilename = `${citation.filepath.substring(0, 20)}...${citation.filepath.substring(citationLength -20)}`;
             }
             else {
-                citationFilename = `${citation.filepath} - Part ${parseInt(citation.chunk_id) + 1}`;
+                citationFilename = `${citation.filepath}`;
+            }
+            if (!omitPart) {
+                citationFilename += ` - Part ${parseInt(citation.chunk_id) + 1}`;
             }
         }
         else if (citation.filepath && citation.reindex_id) {
@@ -253,7 +256,7 @@ export const Answer = ({
                                     aria-label={createCitationFilepath(citation, idx)}
                                 >
                                     <div className={styles.citation}>{idx}</div>
-                                    {createCitationFilepath(citation, idx, true)}
+                                    {createCitationFilepath(citation, idx, false, true)}
                                 </span>);
                         })}
                     </div>
