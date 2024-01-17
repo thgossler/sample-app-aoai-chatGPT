@@ -634,7 +634,7 @@ const Chat = () => {
     return (
         <div className={styles.container} role="main">
             {showAuthMessage ? (
-                <p>Authentication is not configured correctly for this app. Please add an identity provider for the app in Microsoft Entra.</p>
+                <p>&nbsp;&nbsp;Authentication is not configured correctly for this app. Please add an identity provider for the app in Microsoft Entra.</p>
             ) : (
                 <Stack horizontal className={styles.chatRoot}>
                     <div className={styles.chatContainer}>
@@ -665,7 +665,7 @@ const Chat = () => {
                                                         message_id: answer.id,
                                                         feedback: answer.feedback
                                                     }}
-                                                    onCitationClicked={c => onShowCitation(c)}
+                                                    onCitationClicked={c => onShowCitation(c, false)}
                                                 />
                                             </div> : answer.role === ERROR ? <div className={styles.chatMessageError}>
                                                 <Stack horizontal className={styles.chatMessageErrorContent}>
