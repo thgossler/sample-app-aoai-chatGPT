@@ -586,7 +586,11 @@ const Chat = () => {
                 }
                 if (citation.url?.toLowerCase().endsWith('.md')) {
                     var relFilePath = citation.url?.replace(citationConfig.FileStorageBaseUrl, '');
-                    var url = citationConfig.FileLinkBaseUrl + encodeURIComponent(relFilePath.replace(/\.md$/, ''));
+                    if (citationConfig.FileLinkBaseUrl.includes('_wiki')) {
+                        // workaround for Azure DevOps Wiki
+                        relFilePath = relFilePath.replace(/\.md$/, '');
+                    }
+                    var url = citationConfig.FileLinkBaseUrl + encodeURIComponent(relFilePath);
                     if (citationConfig.FileLinkUrlAppendix != null && citationConfig.FileLinkUrlAppendix.length > 0) {
                         url += citationConfig.FileLinkUrlAppendix;
                     }
