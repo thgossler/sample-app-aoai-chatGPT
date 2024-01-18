@@ -586,7 +586,7 @@ const Chat = () => {
                 }
                 if (citation.url?.toLowerCase().endsWith('.md')) {
                     var relFilePath = citation.url?.replace(citationConfig.FileStorageBaseUrl, '');
-                    var url = citationConfig.FileLinkBaseUrl + encodeURIComponent(relFilePath);
+                    var url = citationConfig.FileLinkBaseUrl + encodeURIComponent(relFilePath.replace(/\.md$/, ''));
                     if (citationConfig.FileLinkUrlAppendix != null && citationConfig.FileLinkUrlAppendix.length > 0) {
                         url += citationConfig.FileLinkUrlAppendix;
                     }
