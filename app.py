@@ -8,7 +8,7 @@ from azure.identity import DefaultAzureCredential
 from base64 import b64encode
 from flask import Flask, Response, request, jsonify, send_from_directory
 from dotenv import load_dotenv
-from azure.storage.blob import BlobServiceClient, generate_container_sas, ContainerSasPermissions
+from azure.storage.blob import BlobServiceClient, BlobServiceClient, generate_container_sas, ContainerSasPermissions
 from urllib.parse import urlparse
 import httpx
 from quart import (
