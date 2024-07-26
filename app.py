@@ -956,7 +956,7 @@ def parse_url(url):
     return account_name, container_name
 
 # Create a service SAS token for the container
-def create_service_sas_container(self, container_client: 'ContainerClient', account_key: str):
+def create_service_sas_container(container_client: 'ContainerClient', account_key: str):
     # Create a SAS token that's valid for one day, as an example
     start_time = datetime.datetime.now(datetime.timezone.utc)
     expiry_time = start_time + datetime.timedelta(minutes=15)
