@@ -7,7 +7,7 @@ name: Build and deploy Python app to Azure Web App - sample-app-github-cd
 on:
   push:
     branches:
-      - main
+      - main---disabled
   workflow_dispatch:
 
 jobs:
