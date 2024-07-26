@@ -79,7 +79,7 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
         citationFilename = `${citation.filepath}`
       }
       if (!omitPart) {
-          citationFilename += ` - Part ${parseInt(citation.chunk_id) + 1}`;
+          citationFilename += ` - Part ${parseInt(citation.chunk_id ?? '0') + 1}`;
       }
     } else if (citation.filepath && citation.reindex_id) {
       citationFilename = `${citation.filepath} - Part ${citation.reindex_id}`
