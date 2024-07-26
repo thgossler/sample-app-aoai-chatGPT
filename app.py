@@ -23,6 +23,7 @@ from quart import (
 from openai import AsyncAzureOpenAI
 from azure.identity.aio import (
     DefaultAzureCredential,
+    StorageSharedKeyCredential,
     get_bearer_token_provider
 )
 from backend.auth.auth_utils import get_authenticated_user_details
