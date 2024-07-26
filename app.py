@@ -988,7 +988,7 @@ def storageSas():
         account_name, container_name = parse_url(AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL)
         account_key = AZURE_SEARCH_CITATION_FILE_STORAGE_ACCOUNTKEY
         credential = StorageSharedKeyCredential(account_name, account_key)
-        container_client = ContainerClient(account_url=f"https://{account_name}.blob.core.windows.net", container_name, credential)
+        container_client = ContainerClient(account_url=f"https://{account_name}.blob.core.windows.net", container_name=container_name, credential=credential)
         sas_token = create_service_sas_container(container_client, account_key)
         return sas_token, 200
     except Exception as e:
