@@ -7,6 +7,7 @@ import uuid
 from base64 import b64encode
 from flask import Flask, Response, request, jsonify, send_from_directory
 from dotenv import load_dotenv
+from azure.identity import DefaultAzureCredential, StorageSharedKeyCredential
 from azure.storage.blob import ContainerClient, BlobServiceClient, generate_container_sas, ContainerSasPermissions
 from urllib.parse import urlparse
 import httpx
@@ -23,7 +24,6 @@ from quart import (
 from openai import AsyncAzureOpenAI
 from azure.identity.aio import (
     DefaultAzureCredential,
-    StorageSharedKeyCredential,
     get_bearer_token_provider
 )
 from backend.auth.auth_utils import get_authenticated_user_details
