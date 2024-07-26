@@ -980,7 +980,7 @@ def generate_sas_token(account_name, container_name, credential, expiresAfterMin
     )
     return sas_token
 
-@app.route("/citationConfig", methods=["GET"])
+@bp.route("/citationConfig", methods=["GET"])
 def citationConfig():
     try:
         return jsonify(FileStorageBaseUrl=AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL,
@@ -991,7 +991,7 @@ def citationConfig():
         logging.exception("Exception in /citationConfig: ", details)
         return details, 500
 
-@app.route("/storageSas", methods=["GET"])
+@bp.route("/storageSas", methods=["GET"])
 def storageSas():
     try:
         account_name, container_name = parse_url(AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL)
