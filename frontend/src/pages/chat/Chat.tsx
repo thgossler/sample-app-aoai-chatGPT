@@ -126,7 +126,7 @@ const Chat = () => {
       return
     }
     const userInfoList = await getUserInfo()
-    if (userInfoList.length === 0 && window.location.hostname !== '127.0.0.1') {
+    if (userInfoList.length === 0 && window.location.hostname !== '127.0.0.1' && window.location.hostname !== "localhost") {
       setShowAuthMessage(true)
     } else {
       setShowAuthMessage(false)
