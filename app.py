@@ -992,10 +992,10 @@ def citationConfig():
         return details, 500
 
 @bp.route("/storageSas", methods=["GET"])
-async def storageSas():
+def storageSas():
     try:
         account_name, container_name = parse_url(AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL)
-        credential = await DefaultAzureCredential()
+        credential = DefaultAzureCredential()
         sas_token = generate_sas_token(account_name, container_name, credential, 30)
         return sas_token, 200
     except Exception as e:
