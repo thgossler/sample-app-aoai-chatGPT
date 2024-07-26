@@ -7,7 +7,7 @@ import uuid
 from base64 import b64encode
 from flask import Flask, Response, request, jsonify, send_from_directory
 from dotenv import load_dotenv
-from azure.identity import DefaultAzureCredential, StorageSharedKeyCredential
+from azure.identity import DefaultAzureCredential
 from azure.storage.blob import ContainerClient, BlobServiceClient, generate_container_sas, ContainerSasPermissions
 from urllib.parse import urlparse
 import httpx
@@ -987,7 +987,7 @@ def storageSas():
     try:
         account_name, container_name = parse_url(AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL)
         account_key = AZURE_SEARCH_CITATION_FILE_STORAGE_ACCOUNTKEY
-        credential = StorageSharedKeyCredential(account_name, account_key)
+        credential = DefaultAzureCredential()
         container_client = ContainerClient(account_url=f"https://{account_name}.blob.core.windows.net", container_name=container_name, credential=credential)
         sas_token = create_service_sas_container(container_client, account_key)
         return sas_token, 200
