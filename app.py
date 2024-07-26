@@ -77,6 +77,11 @@ if DEBUG.lower() == "true":
 
 USER_AGENT = "GitHubSampleWebApp/AsyncAzureOpenAI/1.0.0"
 
+# Chat with data: common settings
+SEARCH_TOP_K=5
+SEARCH_STRICTNESS=3
+SEARCH_ENABLE_IN_DOMAIN=True
+
 # ACS Integration Settings
 AZURE_SEARCH_SERVICE = os.environ.get("AZURE_SEARCH_SERVICE")
 AZURE_SEARCH_INDEX = os.environ.get("AZURE_SEARCH_INDEX")
