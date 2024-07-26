@@ -692,7 +692,9 @@ const Chat = () => {
   }, [processMessages])
 
   useEffect(() => {
-    if (AUTH_ENABLED !== undefined) getUserInfoList()
+    if (AUTH_ENABLED !== undefined) getUserInfoList();
+    initCitationConfig();
+    initStorageSas();
   }, [AUTH_ENABLED])
 
   useLayoutEffect(() => {
