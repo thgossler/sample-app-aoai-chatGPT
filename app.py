@@ -1,8 +1,15 @@
+import datetime
 import copy
 import json
 import os
 import logging
 import uuid
+from base64 import b64encode
+from flask import Flask, Response, request, jsonify, send_from_directory
+from dotenv import load_dotenv
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import ContainerClient, BlobServiceClient, generate_container_sas, ContainerSasPermissions
+from urllib.parse import urlparse
 import httpx
 import asyncio
 from quart import (
@@ -85,6 +92,88 @@ if DEBUG.lower() == "true":
 
 USER_AGENT = "GitHubSampleWebApp/AsyncAzureOpenAI/1.0.0"
 
+# Chat with data: common settings
+SEARCH_TOP_K=5
+SEARCH_STRICTNESS=3
+SEARCH_ENABLE_IN_DOMAIN=True
+
+# ACS Integration Settings
+AZURE_SEARCH_SERVICE = os.environ.get("AZURE_SEARCH_SERVICE")
+AZURE_SEARCH_INDEX = os.environ.get("AZURE_SEARCH_INDEX")
+AZURE_SEARCH_KEY = os.environ.get("AZURE_SEARCH_KEY")
+AZURE_SEARCH_USE_SEMANTIC_SEARCH = os.environ.get("AZURE_SEARCH_USE_SEMANTIC_SEARCH", "false")
+AZURE_SEARCH_SEMANTIC_SEARCH_CONFIG = os.environ.get("AZURE_SEARCH_SEMANTIC_SEARCH_CONFIG", "default")
+AZURE_SEARCH_TOP_K = os.environ.get("AZURE_SEARCH_TOP_K", SEARCH_TOP_K)
+AZURE_SEARCH_ENABLE_IN_DOMAIN = os.environ.get("AZURE_SEARCH_ENABLE_IN_DOMAIN", SEARCH_ENABLE_IN_DOMAIN)
+AZURE_SEARCH_CONTENT_COLUMNS = os.environ.get("AZURE_SEARCH_CONTENT_COLUMNS")
+AZURE_SEARCH_FILENAME_COLUMN = os.environ.get("AZURE_SEARCH_FILENAME_COLUMN")
+AZURE_SEARCH_TITLE_COLUMN = os.environ.get("AZURE_SEARCH_TITLE_COLUMN")
+AZURE_SEARCH_URL_COLUMN = os.environ.get("AZURE_SEARCH_URL_COLUMN")
+AZURE_SEARCH_VECTOR_COLUMNS = os.environ.get("AZURE_SEARCH_VECTOR_COLUMNS")
+AZURE_SEARCH_QUERY_TYPE = os.environ.get("AZURE_SEARCH_QUERY_TYPE")
+AZURE_SEARCH_PERMITTED_GROUPS_COLUMN = os.environ.get("AZURE_SEARCH_PERMITTED_GROUPS_COLUMN")
+AZURE_SEARCH_STRICTNESS = os.environ.get("AZURE_SEARCH_STRICTNESS", SEARCH_STRICTNESS)
+
+AZURE_SEARCH_CITATION_FILE_STORAGE_ACCOUNTKEY = os.environ.get("AZURE_SEARCH_CITATION_FILE_STORAGE_ACCOUNTKEY")
+AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL = os.environ.get("AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL")
+AZURE_SEARCH_CITATION_FILE_LINK_BASEURL = os.environ.get("AZURE_SEARCH_CITATION_FILE_LINK_BASEURL")
+AZURE_SEARCH_CITATION_FILE_LINK_URLAPPENDIX = os.environ.get("AZURE_SEARCH_CITATION_FILE_LINK_URLAPPENDIX")
+
+# AOAI Integration Settings
+AZURE_OPENAI_RESOURCE = os.environ.get("AZURE_OPENAI_RESOURCE")
+AZURE_OPENAI_MODEL = os.environ.get("AZURE_OPENAI_MODEL")
+AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_KEY = os.environ.get("AZURE_OPENAI_KEY")
+AZURE_OPENAI_TEMPERATURE = os.environ.get("AZURE_OPENAI_TEMPERATURE", 0)
+AZURE_OPENAI_TOP_P = os.environ.get("AZURE_OPENAI_TOP_P", 1.0)
+AZURE_OPENAI_MAX_TOKENS = os.environ.get("AZURE_OPENAI_MAX_TOKENS", 1000)
+AZURE_OPENAI_STOP_SEQUENCE = os.environ.get("AZURE_OPENAI_STOP_SEQUENCE")
+AZURE_OPENAI_SYSTEM_MESSAGE = os.environ.get("AZURE_OPENAI_SYSTEM_MESSAGE", "You are an AI assistant that helps people find information.")
+AZURE_OPENAI_PREVIEW_API_VERSION = os.environ.get("AZURE_OPENAI_PREVIEW_API_VERSION", "2023-08-01-preview")
+AZURE_OPENAI_STREAM = os.environ.get("AZURE_OPENAI_STREAM", "true")
+AZURE_OPENAI_MODEL_NAME = os.environ.get("AZURE_OPENAI_MODEL_NAME", "gpt-35-turbo-16k") # Name of the model, e.g. 'gpt-35-turbo-16k' or 'gpt-4'
+AZURE_OPENAI_EMBEDDING_ENDPOINT = os.environ.get("AZURE_OPENAI_EMBEDDING_ENDPOINT")
+AZURE_OPENAI_EMBEDDING_KEY = os.environ.get("AZURE_OPENAI_EMBEDDING_KEY")
+AZURE_OPENAI_EMBEDDING_NAME = os.environ.get("AZURE_OPENAI_EMBEDDING_NAME", "")
+
+# CosmosDB Mongo vcore vector db Settings
+AZURE_COSMOSDB_MONGO_VCORE_CONNECTION_STRING = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_CONNECTION_STRING")  #This has to be secure string
+AZURE_COSMOSDB_MONGO_VCORE_DATABASE = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_DATABASE")
+AZURE_COSMOSDB_MONGO_VCORE_CONTAINER = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_CONTAINER")
+AZURE_COSMOSDB_MONGO_VCORE_INDEX = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_INDEX")
+AZURE_COSMOSDB_MONGO_VCORE_TOP_K = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_TOP_K", AZURE_SEARCH_TOP_K)
+AZURE_COSMOSDB_MONGO_VCORE_STRICTNESS = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_STRICTNESS", AZURE_SEARCH_STRICTNESS)  
+AZURE_COSMOSDB_MONGO_VCORE_ENABLE_IN_DOMAIN = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_ENABLE_IN_DOMAIN", AZURE_SEARCH_ENABLE_IN_DOMAIN)
+AZURE_COSMOSDB_MONGO_VCORE_CONTENT_COLUMNS = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_CONTENT_COLUMNS", "")
+AZURE_COSMOSDB_MONGO_VCORE_FILENAME_COLUMN = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_FILENAME_COLUMN")
+AZURE_COSMOSDB_MONGO_VCORE_TITLE_COLUMN = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_TITLE_COLUMN")
+AZURE_COSMOSDB_MONGO_VCORE_URL_COLUMN = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_URL_COLUMN")
+AZURE_COSMOSDB_MONGO_VCORE_VECTOR_COLUMNS = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_VECTOR_COLUMNS")
+
+
+SHOULD_STREAM = True if AZURE_OPENAI_STREAM.lower() == "true" else False
+
+# Chat History CosmosDB Integration Settings
+AZURE_COSMOSDB_DATABASE = os.environ.get("AZURE_COSMOSDB_DATABASE")
+AZURE_COSMOSDB_ACCOUNT = os.environ.get("AZURE_COSMOSDB_ACCOUNT")
+AZURE_COSMOSDB_CONVERSATIONS_CONTAINER = os.environ.get("AZURE_COSMOSDB_CONVERSATIONS_CONTAINER")
+AZURE_COSMOSDB_ACCOUNT_KEY = os.environ.get("AZURE_COSMOSDB_ACCOUNT_KEY")
+AZURE_COSMOSDB_ENABLE_FEEDBACK = os.environ.get("AZURE_COSMOSDB_ENABLE_FEEDBACK", "false").lower() == "true"
+
+# Elasticsearch Integration Settings
+ELASTICSEARCH_ENDPOINT = os.environ.get("ELASTICSEARCH_ENDPOINT")
+ELASTICSEARCH_ENCODED_API_KEY = os.environ.get("ELASTICSEARCH_ENCODED_API_KEY")
+ELASTICSEARCH_INDEX = os.environ.get("ELASTICSEARCH_INDEX")
+ELASTICSEARCH_QUERY_TYPE = os.environ.get("ELASTICSEARCH_QUERY_TYPE", "simple")
+ELASTICSEARCH_TOP_K = os.environ.get("ELASTICSEARCH_TOP_K", SEARCH_TOP_K)
+ELASTICSEARCH_ENABLE_IN_DOMAIN = os.environ.get("ELASTICSEARCH_ENABLE_IN_DOMAIN", SEARCH_ENABLE_IN_DOMAIN)
+ELASTICSEARCH_CONTENT_COLUMNS = os.environ.get("ELASTICSEARCH_CONTENT_COLUMNS")
+ELASTICSEARCH_FILENAME_COLUMN = os.environ.get("ELASTICSEARCH_FILENAME_COLUMN")
+ELASTICSEARCH_TITLE_COLUMN = os.environ.get("ELASTICSEARCH_TITLE_COLUMN")
+ELASTICSEARCH_URL_COLUMN = os.environ.get("ELASTICSEARCH_URL_COLUMN")
+ELASTICSEARCH_VECTOR_COLUMNS = os.environ.get("ELASTICSEARCH_VECTOR_COLUMNS")
+ELASTICSEARCH_STRICTNESS = os.environ.get("ELASTICSEARCH_STRICTNESS", SEARCH_STRICTNESS)
+ELASTICSEARCH_EMBEDDING_MODEL_ID = os.environ.get("ELASTICSEARCH_EMBEDDING_MODEL_ID")
 
 # Frontend Settings via Environment Variables
 frontend_settings = {
@@ -1056,5 +1145,52 @@ async def generate_title(conversation_messages) -> str:
         logging.exception("Exception while generating title", e)
         return messages[-2]["content"]
 
+
+# Parse the provided URL
+def parse_url(url):
+    parsed_url = urlparse(url)
+    account_name = parsed_url.netloc.split('.')[0]
+    container_name = parsed_url.path.split('/')[1]
+    return account_name, container_name
+
+# Create a service SAS token for the container
+def create_service_sas_container(container_client: 'ContainerClient', account_key: str):
+    # Create a SAS token that's valid for one day, as an example
+    start_time = datetime.datetime.now(datetime.timezone.utc)
+    expiry_time = start_time + datetime.timedelta(minutes=15)
+    sas_token = generate_container_sas(
+        account_name=container_client.account_name,
+        container_name=container_client.container_name,
+        account_key=account_key,
+        permission=ContainerSasPermissions(read=True),
+        expiry=expiry_time,
+        start=start_time
+    )
+    return sas_token
+
+@bp.route("/citationConfig", methods=["GET"])
+def citationConfig():
+    try:
+        return jsonify(FileStorageBaseUrl=AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL,
+                       FileLinkBaseUrl=AZURE_SEARCH_CITATION_FILE_LINK_BASEURL,
+                       FileLinkUrlAppendix=AZURE_SEARCH_CITATION_FILE_LINK_URLAPPENDIX), 200
+    except Exception as e:
+        details = jsonify({"error": str(e)})
+        logging.exception("Exception in /citationConfig: ", details)
+        return details, 500
+
+@bp.route("/storageSas", methods=["GET"])
+def storageSas():
+    try:
+        account_name, container_name = parse_url(AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL)
+        account_key = AZURE_SEARCH_CITATION_FILE_STORAGE_ACCOUNTKEY
+        credential = DefaultAzureCredential()
+        container_client = ContainerClient(account_url=f"https://{account_name}.blob.core.windows.net", container_name=container_name, credential=credential)
+        sas_token = create_service_sas_container(container_client, account_key)
+        return sas_token, 200
+    except Exception as e:
+        details = jsonify({"error": str(e)})
+        logging.exception("Exception in /storageSas: ", details)
+        return details, 500
 
 app = create_app()

@@ -66,16 +66,19 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
     setFeedbackState(currentFeedbackState)
   }, [appStateContext?.state.feedbackState, feedbackState, answer.message_id])
 
-  const createCitationFilepath = (citation: Citation, index: number, truncate: boolean = false) => {
+  const createCitationFilepath = (citation: Citation, index: number, truncate: boolean = false, omitPart: boolean = false) => {
     let citationFilename = ''
 
     if (citation.filepath) {
       const part_i = citation.part_index ?? (citation.chunk_id ? parseInt(citation.chunk_id) + 1 : '')
       if (truncate && citation.filepath.length > filePathTruncationLimit) {
         const citationLength = citation.filepath.length
-        citationFilename = `${citation.filepath.substring(0, 20)}...${citation.filepath.substring(citationLength - 20)} - Part ${part_i}`
+        citationFilename = `${citation.filepath.substring(0, 20)}...${citation.filepath.substring(citationLength - 20)}`
       } else {
-        citationFilename = `${citation.filepath} - Part ${part_i}`
+        citationFilename = `${citation.filepath}`
+      }
+      if (!omitPart) {
+          citationFilename += ` - Part ${parseInt(citation.chunk_id ?? '0') + 1}`;
       }
     } else if (citation.filepath && citation.reindex_id) {
       citationFilename = `${citation.filepath} - Part ${citation.reindex_id}`
@@ -364,7 +367,7 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
                   className={styles.citationContainer}
                   aria-label={createCitationFilepath(citation, idx)}>
                   <div className={styles.citation}>{idx}</div>
-                  {createCitationFilepath(citation, idx, true)}
+                  {createCitationFilepath(citation, idx, false, true)}
                 </span>
               )
             })}

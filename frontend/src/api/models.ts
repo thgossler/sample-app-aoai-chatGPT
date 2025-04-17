@@ -20,6 +20,12 @@ export type Citation = {
   reindex_id: string | null
 }
 
+export type CitationConfig = {
+    FileStorageBaseUrl: string | null;
+    FileLinkBaseUrl: string | null;
+    FileLinkUrlAppendix: string | null;
+}
+
 export type ToolMessageContent = {
   citations: Citation[]
   intent: string

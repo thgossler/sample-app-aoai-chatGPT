@@ -32,6 +32,9 @@ import {
   CosmosDBStatus,
   ErrorMessage,
   ExecResults,
+  CitationConfig,
+  getCitationConfig,
+  getStorageSas
 } from "../../api";
 import { Answer } from "../../components/Answer";
 import { QuestionInput } from "../../components/QuestionInput";
@@ -65,6 +68,8 @@ const Chat = () => {
   const [errorMsg, setErrorMsg] = useState<ErrorMessage | null>()
   const [logo, setLogo] = useState('')
   const [answerId, setAnswerId] = useState<string>('')
+  const [citationConfig, setCitationConfig] = useState<CitationConfig>({FileStorageBaseUrl: null, FileLinkBaseUrl: null, FileLinkUrlAppendix: null});
+  const [storageSas, setStorageSas] = useState<string>("");
 
   const errorDialogContentProps = {
     type: DialogType.close,
@@ -122,7 +127,7 @@ const Chat = () => {
       return
     }
     const userInfoList = await getUserInfo()
-    if (userInfoList.length === 0 && window.location.hostname !== '127.0.0.1') {
+    if (userInfoList.length === 0 && window.location.hostname !== '127.0.0.1' && window.location.hostname !== "localhost") {
       setShowAuthMessage(true)
     } else {
       setShowAuthMessage(false)
@@ -177,6 +182,26 @@ const Chat = () => {
         ? setMessages([...messages, assistantMessage])
         : setMessages([...messages, toolMessage, assistantMessage])
     }
+  }
+
+  const initCitationConfig = async () => {
+    let config = await getCitationConfig();
+    setCitationConfig(config);
+  }
+
+  const initStorageSas = async () => {
+    let sas = await getStorageSas();
+    setStorageSas(sas);
+  }
+
+  const initCitationConfig = async () => {
+    let config = await getCitationConfig();
+    setCitationConfig(config);
+  }
+
+  const initStorageSas = async () => {
+    let sas = await getStorageSas();
+    setStorageSas(sas);
   }
 
   const makeApiRequestWithoutCosmosDB = async (question: ChatMessage["content"], conversationId?: string) => {
@@ -694,17 +719,71 @@ const Chat = () => {
   }, [processMessages])
 
   useEffect(() => {
-    if (AUTH_ENABLED !== undefined) getUserInfoList()
+    if (AUTH_ENABLED !== undefined) getUserInfoList();
+    initCitationConfig();
+    initStorageSas();
   }, [AUTH_ENABLED])
 
   useLayoutEffect(() => {
     chatMessageStreamEnd.current?.scrollIntoView({ behavior: 'smooth' })
   }, [showLoadingMessage, processMessages])
 
-  const onShowCitation = (citation: Citation) => {
-    setActiveCitation(citation)
-    setIsCitationPanelOpen(true)
+  const getQueryParam = (url: string, param: string) => {
+    var queryString = url.split('?')[1];
+    if (queryString) {
+      queryString = queryString.toLowerCase();
+      param = param.toLowerCase().trim();
+      var keyValuePairs = queryString.split('&');
+      for (var i = 0; i < keyValuePairs.length; i++) {
+        var keyValuePair = keyValuePairs[i].split('=');
+        if (keyValuePair[0] === param) {
+          return keyValuePair[1] || '';
+        }
+      }
+    }
+    return null;
   }
+
+  const onShowCitation = (citation: Citation, usePanel: boolean = true) => {
+    if (usePanel) {
+      setActiveCitation(citation);
+      setIsCitationPanelOpen(true);
+    }
+    else {
+      if (null != window && null != citation &&
+        citationConfig.FileStorageBaseUrl != null && citationConfig.FileStorageBaseUrl.length > 0 &&
+        citationConfig.FileLinkBaseUrl != null && citationConfig.FileLinkBaseUrl.length > 0) {
+        var linkTarget = getQueryParam(window.location.href, 'link-target');
+        if (linkTarget == null) {
+          linkTarget = '_blank';
+        }
+        if (citation.url?.toLowerCase().endsWith('.md')) {
+          var relFilePath = citation.url?.replace(citationConfig.FileStorageBaseUrl, '');
+          if (citationConfig.FileLinkBaseUrl.includes('_wiki')) {
+            // workaround for Azure DevOps Wiki
+            relFilePath = relFilePath.replace(/\.md$/, '');
+          }
+          var url = citationConfig.FileLinkBaseUrl + encodeURIComponent(relFilePath);
+          if (citationConfig.FileLinkUrlAppendix != null && citationConfig.FileLinkUrlAppendix.length > 0) {
+            url += citationConfig.FileLinkUrlAppendix;
+          }
+          var result = window.open(url, linkTarget);
+          if (result) {
+            result.focus();
+          }
+        }
+        else if (citation.url?.toLowerCase().endsWith('.pdf')) {
+          var result = window.open(citation.url + '?' + storageSas, linkTarget);
+          if (result) {
+            result.focus();
+          }
+        }
+        else {
+          console.error('Unhandled file type, navigation to data source not possible');
+        }
+      }
+    }
+  };
 
   const onShowExecResult = (answerId: string) => {
     setIsIntentsPanelOpen(true)
@@ -816,7 +895,7 @@ const Chat = () => {
                             feedback: answer.feedback,
                             exec_results: execResults
                           }}
-                          onCitationClicked={c => onShowCitation(c)}
+                          onCitationClicked={c => onShowCitation(c, false)}
                           onExectResultClicked={() => onShowExecResult(answerId)}
                         />}
                       </div>
