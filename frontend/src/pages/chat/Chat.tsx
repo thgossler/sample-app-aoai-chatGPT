@@ -194,16 +194,6 @@ const Chat = () => {
     setStorageSas(sas);
   }
 
-  const initCitationConfig = async () => {
-    let config = await getCitationConfig();
-    setCitationConfig(config);
-  }
-
-  const initStorageSas = async () => {
-    let sas = await getStorageSas();
-    setStorageSas(sas);
-  }
-
   const makeApiRequestWithoutCosmosDB = async (question: ChatMessage["content"], conversationId?: string) => {
     setIsLoading(true)
     setShowLoadingMessage(true)
