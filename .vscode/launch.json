@@ -2,6 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Python: Debug Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "${input:debugArgs}"
+      ],
+      "justMyCode": false
+    },
+    {
       "name": "Python: Sample App Backend",
       "type": "python",
       "request": "launch",
@@ -27,6 +39,14 @@
       "url": "http://127.0.0.1:50505",
       "webRoot": "${workspaceFolder}/frontend",
       "smartStep": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "debugArgs",
+      "type": "promptString",
+      "description": "Enter command line arguments",
+      "default": ""
     }
   ]
 }
