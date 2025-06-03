@@ -142,6 +142,8 @@ _az_sys_msg_env = os.environ.get("AZURE_OPENAI_SYSTEM_MESSAGE")
 if _az_sys_msg_env is not None:
     try:
         AZURE_OPENAI_SYSTEM_MESSAGE = base64.b64decode(_az_sys_msg_env).decode("utf-8")
+        # Also update the value in app settings
+        app_settings.azure_openai.system_message = AZURE_OPENAI_SYSTEM_MESSAGE
     except Exception:
         AZURE_OPENAI_SYSTEM_MESSAGE = _az_sys_msg_env  # fallback to raw if decode fails
 else:
@@ -167,7 +169,6 @@ AZURE_COSMOSDB_MONGO_VCORE_FILENAME_COLUMN = os.environ.get("AZURE_COSMOSDB_MONG
 AZURE_COSMOSDB_MONGO_VCORE_TITLE_COLUMN = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_TITLE_COLUMN")
 AZURE_COSMOSDB_MONGO_VCORE_URL_COLUMN = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_URL_COLUMN")
 AZURE_COSMOSDB_MONGO_VCORE_VECTOR_COLUMNS = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_VECTOR_COLUMNS")
-
 
 SHOULD_STREAM = True if AZURE_OPENAI_STREAM.lower() == "true" else False
 

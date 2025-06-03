@@ -2,6 +2,14 @@
 
 cd /D "%~dp0"
 
+call build.cmd
+if "%errorlevel%" neq "0" (
+    echo Failed to build the project
+    exit /B %errorlevel%
+)
+
+cd /D "%~dp0"
+
 echo.    
 echo Starting backend    
 echo.    

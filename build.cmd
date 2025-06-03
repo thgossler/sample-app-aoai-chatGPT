@@ -1,5 +1,7 @@
 @echo off
 
+cd /D "%~dp0"
+
 echo.
 echo Restoring backend python packages
 echo.
