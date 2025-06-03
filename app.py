@@ -5,6 +5,7 @@ import os
 import logging
 import uuid
 from base64 import b64encode
+import base64
 from flask import Flask, Response, request, jsonify, send_from_directory
 from dotenv import load_dotenv
 from azure.identity import DefaultAzureCredential
@@ -42,6 +43,13 @@ from backend.utils import (
     convert_to_pf_format,
     format_pf_non_streaming_response,
 )
+
+
+if os.path.exists(".env"):
+    # Load environment variables from .env file
+    logging.info("Loading environment variables from .env file")
+    load_dotenv()
+
 
 bp = Blueprint("routes", __name__, static_folder="static", template_folder="static")
 
@@ -128,7 +136,17 @@ AZURE_OPENAI_TEMPERATURE = os.environ.get("AZURE_OPENAI_TEMPERATURE", 0)
 AZURE_OPENAI_TOP_P = os.environ.get("AZURE_OPENAI_TOP_P", 1.0)
 AZURE_OPENAI_MAX_TOKENS = os.environ.get("AZURE_OPENAI_MAX_TOKENS", 1000)
 AZURE_OPENAI_STOP_SEQUENCE = os.environ.get("AZURE_OPENAI_STOP_SEQUENCE")
-AZURE_OPENAI_SYSTEM_MESSAGE = os.environ.get("AZURE_OPENAI_SYSTEM_MESSAGE", "You are an AI assistant that helps people find information.")
+
+# AZURE_OPENAI_SYSTEM_MESSAGE: decode from Base64 if set in environment
+_az_sys_msg_env = os.environ.get("AZURE_OPENAI_SYSTEM_MESSAGE")
+if _az_sys_msg_env is not None:
+    try:
+        AZURE_OPENAI_SYSTEM_MESSAGE = base64.b64decode(_az_sys_msg_env).decode("utf-8")
+    except Exception:
+        AZURE_OPENAI_SYSTEM_MESSAGE = _az_sys_msg_env  # fallback to raw if decode fails
+else:
+    AZURE_OPENAI_SYSTEM_MESSAGE = "You are an AI assistant that helps people find information."
+
 AZURE_OPENAI_PREVIEW_API_VERSION = os.environ.get("AZURE_OPENAI_PREVIEW_API_VERSION", "2023-08-01-preview")
 AZURE_OPENAI_STREAM = os.environ.get("AZURE_OPENAI_STREAM", "true")
 AZURE_OPENAI_MODEL_NAME = os.environ.get("AZURE_OPENAI_MODEL_NAME", "gpt-35-turbo-16k") # Name of the model, e.g. 'gpt-35-turbo-16k' or 'gpt-4'
@@ -214,7 +232,7 @@ async def init_openai_client():
             < MINIMUM_SUPPORTED_AZURE_OPENAI_PREVIEW_API_VERSION
         ):
             raise ValueError(
-                f"The minimum supported Azure OpenAI preview API version is '{MINIMUM_SUPPORTED_AZURE_OPENAI_PREVIEW_API_VERSION}'"
+                f"The minimum supported Azure OpenAI preview API version is '{MINIMUM_SUPPORTED_AZURE_OPENAI_PREVIEW_API_VERSION}', but the configured version is '{app_settings.azure_openai.preview_api_version}'. Please update your configuration."
             )
 
         # Endpoint

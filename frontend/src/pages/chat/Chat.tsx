@@ -740,36 +740,60 @@ const Chat = () => {
       setIsCitationPanelOpen(true);
     }
     else {
-      if (null != window && null != citation &&
-        citationConfig.FileStorageBaseUrl != null && citationConfig.FileStorageBaseUrl.length > 0 &&
-        citationConfig.FileLinkBaseUrl != null && citationConfig.FileLinkBaseUrl.length > 0) {
+      if (null != window && null != citation) {
         var linkTarget = getQueryParam(window.location.href, 'link-target');
         if (linkTarget == null) {
           linkTarget = '_blank';
         }
-        if (citation.url?.toLowerCase().endsWith('.md')) {
-          var relFilePath = citation.url?.replace(citationConfig.FileStorageBaseUrl, '');
-          if (citationConfig.FileLinkBaseUrl.includes('_wiki')) {
-            // workaround for Azure DevOps Wiki
-            relFilePath = relFilePath.replace(/\.md$/, '');
+        if (citationConfig.FileStorageBaseUrl != null && citationConfig.FileStorageBaseUrl.length > 0 &&
+          citationConfig.FileLinkBaseUrl != null && citationConfig.FileLinkBaseUrl.length > 0) {
+          let lowercaseUrl = citation.url?.toLowerCase() ?? '';
+          if (lowercaseUrl.endsWith('.md') || lowercaseUrl.includes('.md#') || lowercaseUrl.includes('.md?')) {
+            var hostUrl = new URL(citationConfig.FileStorageBaseUrl);
+            var hostPart = hostUrl.protocol + '//' + hostUrl.host;
+            var blobContainerPart = hostPart + '/';
+            var pathParts = hostUrl.pathname.split('/').filter(Boolean);
+            if (pathParts.length > 0) {
+              blobContainerPart += pathParts[0];
+            }
+            citation.url = lowercaseUrl;
+            blobContainerPart = blobContainerPart.toLowerCase();
+            if (citation.url?.includes(blobContainerPart)) {
+              var relFilePath = citation.url?.replace(blobContainerPart, '');
+              if (citationConfig.FileLinkBaseUrl.includes('_wiki')) {
+                // workaround for Azure DevOps Wiki
+                relFilePath = relFilePath.replace(/\.md$/, '');
+              }
+              var url = citationConfig.FileLinkBaseUrl + encodeURIComponent(relFilePath);
+              if (citationConfig.FileLinkUrlAppendix != null && citationConfig.FileLinkUrlAppendix.length > 0) {
+                url += citationConfig.FileLinkUrlAppendix;
+              }
+              var result = window.open(url, linkTarget);
+              if (result) {
+                result.focus();
+              }
+            }
+            else {
+              if (citation.url) {
+                var result = window.open(citation.url, linkTarget);
+                if (result) {
+                  result.focus();
+                }
+              }
+              else {
+                console.error('No URL provided for citation');
+              }
+            }
           }
-          var url = citationConfig.FileLinkBaseUrl + encodeURIComponent(relFilePath);
-          if (citationConfig.FileLinkUrlAppendix != null && citationConfig.FileLinkUrlAppendix.length > 0) {
-            url += citationConfig.FileLinkUrlAppendix;
+          else if (citation.url?.toLowerCase().endsWith('.pdf')) {
+            var result = window.open(citation.url + '?' + storageSas, linkTarget);
+            if (result) {
+              result.focus();
+            }
           }
-          var result = window.open(url, linkTarget);
-          if (result) {
-            result.focus();
+          else {
+            console.error('Unhandled file type, navigation to data source not possible');
           }
-        }
-        else if (citation.url?.toLowerCase().endsWith('.pdf')) {
-          var result = window.open(citation.url + '?' + storageSas, linkTarget);
-          if (result) {
-            result.focus();
-          }
-        }
-        else {
-          console.error('Unhandled file type, navigation to data source not possible');
         }
       }
     }

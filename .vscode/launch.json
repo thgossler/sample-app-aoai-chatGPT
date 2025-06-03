@@ -8,6 +8,7 @@
       "program": "${file}",
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
       "args": [
         "${input:debugArgs}"
       ],
@@ -19,6 +20,7 @@
       "request": "launch",
       "module": "quart",
       "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
       "env": {
           "QUART_APP": "app:app",
           "QUART_ENV": "development",
@@ -27,7 +29,7 @@
       "args": [
           "run",
           "--no-reload",
-          "-p 50505"
+          "-p 8081"
       ],
       "console": "integratedTerminal",
       "justMyCode": false
@@ -36,7 +38,7 @@
       "type": "chrome",
       "request": "launch",
       "name": "Frontend: Launch Chrome debugger",
-      "url": "http://127.0.0.1:50505",
+      "url": "http://127.0.0.1:8081",
       "webRoot": "${workspaceFolder}/frontend",
       "smartStep": true
     }

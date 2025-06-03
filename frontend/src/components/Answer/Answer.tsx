@@ -66,10 +66,41 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
     setFeedbackState(currentFeedbackState)
   }, [appStateContext?.state.feedbackState, feedbackState, answer.message_id])
 
-  const createCitationFilepath = (citation: Citation, index: number, truncate: boolean = false, omitPart: boolean = false) => {
+  const updateCitation = (citation: Citation, index: number, truncate: boolean = false, omitPart: boolean = false) => {
     let citationFilename = ''
 
-    if (citation.filepath) {
+    if (citation.content && citation.content.length > 0 && citation.content.includes('source_url')) {
+      // Citation info is contained in content
+      var sourceUrlMatch = citation.content.match(/source_url\s*[:]\s*(.*)/);
+      var sourceUrl = sourceUrlMatch ? sourceUrlMatch[1] : null;
+
+      var sourceTitleMatch = citation.content.match(/source_title\s*[:]\s*(.*)/);
+      var sourceTitle = sourceTitleMatch ? sourceTitleMatch[1] : null;
+
+      var sourceFileMatch = citation.content.match(/source_file\s*[:]\s*(.*)/);
+      var sourceFile = sourceFileMatch ? sourceFileMatch[1] : null;
+
+      var chunkIndexMatch = citation.content.match(/chunk_index\s*[:]\s*(\d+)/);
+      var chunkIndex = chunkIndexMatch ? parseInt(chunkIndexMatch[1]) : 1;
+
+      var chunkTotalMatch = citation.content.match(/chunk_total\s*[:]\s*(\d+)/);
+      var chunkTotal = chunkTotalMatch ? parseInt(chunkTotalMatch[1]) : 1;
+
+      if (sourceUrl && sourceUrl.length > 0 && sourceTitle && sourceTitle.length > 0 && sourceFile && sourceFile.length > 0) {
+        citationFilename = sourceFile
+        if (chunkIndex > 1 && chunkTotal > 1 && !omitPart) {
+          citationFilename += ` (part ${chunkIndex})`;
+        }
+        citation.url = sourceUrl;
+        citation.title = sourceTitle;
+        citation.filepath = sourceFile;
+        citation.chunk_id = `${chunkIndex - 1}`;
+        citation.part_index = chunkIndex;
+        citation.reindex_id = `${chunkIndex}`;
+      }
+    }
+    else if (citation.filepath) {
+      // Citation info is not contained in content, use filepath
       const part_i = citation.part_index ?? (citation.chunk_id ? parseInt(citation.chunk_id) + 1 : '')
       if (truncate && citation.filepath.length > filePathTruncationLimit) {
         const citationLength = citation.filepath.length
@@ -78,14 +109,19 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
         citationFilename = `${citation.filepath}`
       }
       if (!omitPart) {
-          citationFilename += ` - Part ${parseInt(citation.chunk_id ?? '0') + 1}`;
+        if (citation.filepath && citation.reindex_id) {
+          citationFilename += ` (part ${citation.reindex_id})`
+        }
+        else {
+          citationFilename += ` (part ${parseInt(citation.chunk_id ?? '0') + 1})`;
+        }
       }
-    } else if (citation.filepath && citation.reindex_id) {
-      citationFilename = `${citation.filepath} - Part ${citation.reindex_id}`
+      citation.title = citationFilename;
     } else {
+      // Fallback to generic citation title
       citationFilename = `Citation ${index}`
+      citation.title = citationFilename;
     }
-    return citationFilename
   }
 
   const onLikeResponseClicked = async () => {
@@ -356,18 +392,19 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
         {chevronIsExpanded && (
           <div className={styles.citationWrapper}>
             {parsedAnswer?.citations.map((citation, idx) => {
+              updateCitation(citation, idx++);
               return (
                 <span
-                  title={createCitationFilepath(citation, ++idx)}
+                  title={citation.title ?? undefined}
                   tabIndex={0}
                   role="link"
                   key={idx}
                   onClick={() => onCitationClicked(citation)}
                   onKeyDown={e => (e.key === 'Enter' || e.key === ' ' ? onCitationClicked(citation) : null)}
                   className={styles.citationContainer}
-                  aria-label={createCitationFilepath(citation, idx)}>
+                  aria-label={citation.title ?? undefined}>
                   <div className={styles.citation}>{idx}</div>
-                  {createCitationFilepath(citation, idx, false, true)}
+                  {citation.title}
                 </span>
               )
             })}

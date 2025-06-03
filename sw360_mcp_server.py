@@ -4,6 +4,8 @@ SW360 MCP Server
 ================
 Expose SW360 REST‑API data as Model Context Protocol (MCP) tools so that any MCP‑enabled chat client can query components, releases and vulnerabilities in real‑time.
 
+See also: https://sw360.example.com/resource/docs/api-guide.html
+
 Prerequisites
 -------------
 ```bash
