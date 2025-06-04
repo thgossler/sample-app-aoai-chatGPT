@@ -44,6 +44,9 @@ from backend.utils import (
     format_pf_non_streaming_response,
 )
 
+# FastMCP 2 client for MCP integration
+from fastmcp import Client
+
 
 if os.path.exists(".env"):
     # Load environment variables from .env file
@@ -70,6 +73,12 @@ def create_app():
             logging.exception("Failed to initialize CosmosDB client")
             app.cosmos_conversation_client = None
             raise e
+        
+        # Initialize MCP clients (non-blocking)
+        try:
+            await init_sw360_mcp_client()
+        except Exception as e:
+            logging.warning(f"SW360 MCP client initialization failed (optional): {e}")
     
     return app
 
@@ -222,8 +231,22 @@ MS_DEFENDER_ENABLED = os.environ.get("MS_DEFENDER_ENABLED", "true").lower() == "
 azure_openai_tools = []
 azure_openai_available_tools = []
 
+# MCP Client and Tools
+sw360_mcp_client = None
+local_mcp_tools = []
+mcp_tools_initialized = False
+
+# Azure OpenAI Client cache
+azure_openai_client_cache = None
+
 # Initialize Azure OpenAI Client
 async def init_openai_client():
+    global azure_openai_client_cache, mcp_tools_initialized
+    
+    # Return cached client if available
+    if azure_openai_client_cache is not None:
+        return azure_openai_client_cache
+    
     azure_openai_client = None
     
     try:
@@ -270,19 +293,36 @@ async def init_openai_client():
         # Default Headers
         default_headers = {"x-ms-useragent": USER_AGENT}
 
-        # Remote function calls
-        if app_settings.azure_openai.function_call_azure_functions_enabled:
+        # Remote function calls - only initialize once
+        if app_settings.azure_openai.function_call_azure_functions_enabled and not mcp_tools_initialized:
             azure_functions_tools_url = f"{app_settings.azure_openai.function_call_azure_functions_tools_base_url}?code={app_settings.azure_openai.function_call_azure_functions_tools_key}"
             async with httpx.AsyncClient() as client:
                 response = await client.get(azure_functions_tools_url)
             response_status_code = response.status_code
             if response_status_code == httpx.codes.OK:
-                azure_openai_tools.extend(json.loads(response.text))
-                for tool in azure_openai_tools:
-                    azure_openai_available_tools.append(tool["function"]["name"])
+                new_tools = json.loads(response.text)
+                # Add tools with deduplication
+                for tool in new_tools:
+                    tool_name = tool["function"]["name"]
+                    if tool_name not in azure_openai_available_tools:
+                        azure_openai_tools.append(tool)
+                        azure_openai_available_tools.append(tool_name)
             else:
                 logging.error(f"An error occurred while getting OpenAI Function Call tools metadata: {response.status_code}")
 
+        # Add MCP tools with deduplication - only if not already initialized
+        if local_mcp_tools and not mcp_tools_initialized:
+            added_count = 0
+            for tool in local_mcp_tools:
+                tool_name = tool["function"]["name"]
+                if tool_name not in azure_openai_available_tools:
+                    azure_openai_tools.append(tool)
+                    azure_openai_available_tools.append(tool_name)
+                    added_count += 1
+            logging.info(f"Added {added_count} local MCP tools to available tools")
+        
+        # Mark tools as initialized
+        mcp_tools_initialized = True
         
         azure_openai_client = AsyncAzureOpenAI(
             api_version=app_settings.azure_openai.preview_api_version,
@@ -292,6 +332,8 @@ async def init_openai_client():
             azure_endpoint=endpoint,
         )
 
+        # Cache the client
+        azure_openai_client_cache = azure_openai_client
         return azure_openai_client
     except Exception as e:
         logging.exception("Exception in Azure OpenAI initialization", e)
@@ -344,6 +386,72 @@ async def init_cosmosdb_client():
         logging.debug("CosmosDB not configured")
 
     return cosmos_conversation_client
+
+
+async def init_sw360_mcp_client():
+    """Initialize SW360 MCP client and load available tools"""
+    global sw360_mcp_client, local_mcp_tools
+    
+    # Return existing client if already initialized
+    if sw360_mcp_client is not None:
+        logging.debug("SW360 MCP client already initialized, reusing existing client")
+        return sw360_mcp_client
+    
+    try:
+        # Check if SW360 environment variables are set
+        sw360_api_key = os.environ.get("SW360_API_KEY")
+        sw360_url_root = os.environ.get("SW360_URL_ROOT")
+        
+        if not sw360_api_key or not sw360_url_root:
+            logging.info("SW360 MCP client not configured (missing SW360_API_KEY or SW360_URL_ROOT)")
+            return None
+            
+        # Path to SW360 MCP server script
+        sw360_server_path = os.path.join(os.path.dirname(__file__), "sw360_mcp_server.py")
+        
+        if not os.path.exists(sw360_server_path):
+            logging.error(f"SW360 MCP server script not found at {sw360_server_path}")
+            return None
+            
+        # Initialize MCP client with STDIO transport to the SW360 server
+        # Import the transport to pass environment variables to the subprocess
+        from fastmcp.client.transports import PythonStdioTransport
+        
+        # Create transport with environment variables
+        transport = PythonStdioTransport(
+            script_path=sw360_server_path,
+            env={
+                "SW360_API_KEY": sw360_api_key,
+                "SW360_URL_ROOT": sw360_url_root
+            }
+        )
+        
+        # Create client with the configured transport
+        sw360_mcp_client = Client(transport)
+        
+        # Connect and get available tools
+        async with sw360_mcp_client as client:
+            tools_list = await client.list_tools()
+            
+            # Convert MCP tools to OpenAI function format
+            for tool in tools_list:
+                openai_tool = {
+                    "type": "function",
+                    "function": {
+                        "name": f"local_sw360_{tool.name}",
+                        "description": tool.description,
+                        "parameters": tool.inputSchema
+                    }
+                }
+                local_mcp_tools.append(openai_tool)
+                
+        logging.info(f"SW360 MCP client initialized with {len(tools_list)} tools")
+        return sw360_mcp_client
+        
+    except Exception as e:
+        logging.exception(f"Failed to initialize SW360 MCP client: {e}")
+        sw360_mcp_client = None
+        return None
 
 
 def prepare_model_args(request_body, request_headers):
@@ -402,7 +510,7 @@ def prepare_model_args(request_body, request_headers):
 
     if len(messages) > 0:
         if messages[-1]["role"] == "user":
-            if app_settings.azure_openai.function_call_azure_functions_enabled and len(azure_openai_tools) > 0:
+            if len(azure_openai_tools) > 0:
                 model_args["tools"] = azure_openai_tools
 
             if app_settings.datasource:
@@ -486,6 +594,31 @@ async def promptflow_request(request):
         logging.error(f"An error occurred while making promptflow_request: {e}")
 
 
+async def call_local_mcp_tool(tool_name: str, tool_args: dict):
+    """Call a MCP tool via the global MCP client"""
+    global sw360_mcp_client
+    
+    try:
+        actual_tool_name = tool_name
+        mcp_client = None
+
+        if tool_name.startswith('local_sw360_'):
+            if not sw360_mcp_client:
+                raise RuntimeError("SW360 MCP client not initialized")
+            mcp_client = sw360_mcp_client
+            actual_tool_name = tool_name[12:]
+        
+        async with mcp_client as client:
+            result = await client.call_tool(actual_tool_name, tool_args)
+            if result is not None and hasattr(result, "__len__") and len(result) > 0 and hasattr(result[0], "text"):
+                return result[0].text
+            else:
+                return str(result)            
+    except Exception as e:
+        logging.error(f"Error calling MCP tool {tool_name}: {e}")
+        return f"Error: {str(e)}"
+
+
 async def process_function_call(response):
     response_message = response.choices[0].message
     messages = []
@@ -496,7 +629,19 @@ async def process_function_call(response):
             if tool_call.function.name not in azure_openai_available_tools:
                 continue
             
-            function_response = await openai_remote_azure_function_call(tool_call.function.name, tool_call.function.arguments)
+            # Determine if this is a local MCP tool or Azure Function tool
+            if tool_call.function.name.startswith('local_'):
+                # Handle local MCP tool call
+                function_response = await call_local_mcp_tool(
+                    tool_call.function.name, 
+                    json.loads(tool_call.function.arguments)
+                )
+            else:
+                # Handle Azure Function tool call
+                function_response = await openai_remote_azure_function_call(
+                    tool_call.function.name, 
+                    tool_call.function.arguments
+                )
 
             # adding assistant response to messages
             messages.append(
@@ -560,7 +705,7 @@ async def complete_chat_request(request_body, request_headers):
         history_metadata = request_body.get("history_metadata", {})
         non_streaming_response = format_non_streaming_response(response, history_metadata, apim_request_id)
 
-        if app_settings.azure_openai.function_call_azure_functions_enabled:
+        if len(azure_openai_tools) > 0:
             function_response = await process_function_call(response)  # Add await here
 
             if function_response:
@@ -612,7 +757,16 @@ async def process_function_call_stream(completionChunk, function_call_stream_sta
             function_call_stream_state.tool_calls.append(function_call_stream_state.current_tool_call)
             
             for tool_call in function_call_stream_state.tool_calls:
-                tool_response = await openai_remote_azure_function_call(tool_call["tool_name"], tool_call["tool_arguments"])
+                # Determine if this is a local MCP tool or Azure Function tool
+                if tool_call["tool_name"].startswith('local_'):
+                    # Handle local MCP tool call
+                    tool_response = await call_local_mcp_tool(
+                        tool_call["tool_name"], 
+                        json.loads(tool_call["tool_arguments"])
+                    )
+                else:
+                    # Handle Azure Function tool call
+                    tool_response = await openai_remote_azure_function_call(tool_call["tool_name"], tool_call["tool_arguments"])
 
                 function_call_stream_state.function_messages.append({
                     "role": "assistant",
@@ -641,7 +795,7 @@ async def stream_chat_request(request_body, request_headers):
     history_metadata = request_body.get("history_metadata", {})
     
     async def generate(apim_request_id, history_metadata):
-        if app_settings.azure_openai.function_call_azure_functions_enabled:
+        if len(azure_openai_tools) > 0:
             # Maintain state during function call streaming
             function_call_stream_state = AzureOpenaiFunctionCallStreamState()
             

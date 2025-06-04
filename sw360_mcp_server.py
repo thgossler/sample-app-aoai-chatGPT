@@ -9,7 +9,7 @@ See also: https://sw360.example.com/resource/docs/api-guide.html
 Prerequisites
 -------------
 ```bash
-pip install "mcp[cli]" requests  # installs SDK ≥ 1.9.0 with FastMCP
+pip install fastmcp requests  # installs FastMCP 2
 export SW360_API_KEY="<your token>"
 export SW360_URL_ROOT="https://sw360.example.com"
 ```
@@ -40,7 +40,7 @@ import urllib.parse
 from typing import Any, Dict, Optional
 
 import requests
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 SW360_API_KEY_ENV = "SW360_API_KEY"
 SW360_URL_ROOT_ENV = "SW360_URL_ROOT"
@@ -125,7 +125,7 @@ class SW360Client:
         for project in projects:
             if "name" in project and "version" in project:
                 project["name"] = f"{project['name']} ({project['version']})"
-            project["projectWebpageUrl"] = f"{page_url}{project['id']}"
+            project["WebpageUrl"] = f"{page_url}{project['id']}"
         return projects
 
     def get_releases(self, project_id: str):
@@ -134,7 +134,30 @@ class SW360Client:
 
     def get_vulnerabilities(self, project_id: str):
         url = f"{self.url_root}/resource/api/projects/{project_id}/vulnerabilities"
-        return self._get(url, {"page": "0", "page_entries": "250", "sort": "externalId"})
+        vulnerabilities = self._get(url, {"page": "0", "page_entries": "250", "sort": "externalId"})
+        if isinstance(vulnerabilities, dict) and '_embedded' in vulnerabilities and 'sw360:vulnerabilityDTOes' in vulnerabilities['_embedded']:
+            vulnerabilities = vulnerabilities['_embedded']['sw360:vulnerabilityDTOes']
+        elif isinstance(vulnerabilities, dict) and 'content' in vulnerabilities:
+            vulnerabilities = vulnerabilities['content']
+        if not vulnerabilities:
+            raise ValueError(f"No vulnerabilities found for project '{project_id}'")
+        page_url = f"{self.url_root}/group/guest/vulnerabilities?p_p_id=sw360_portlet_vulnerabilitites&p_p_lifecycle=0&_sw360_portlet_vulnerabilitites_pagename=detail&_sw360_portlet_vulnerabilitites_vulnerabilityId=$(VUL_ID)#/tab-Summary"
+        for vulnerability in vulnerabilities:
+            vulnerability["WebpageUrl"] = page_url.replace("$(VUL_ID)", vulnerability.get("id", ""))
+        vulnerabilities.sort(key=lambda v: (v.get("priority", ""), v.get("externalId", "")), reverse=True)
+        return vulnerabilities
+
+    def get_vulnerability_tracking_status(self, project_id: str):
+        url = f"{self.url_root}/resource/api/vulnerabilities/trackingStatus/{project_id}"
+        vulnerabilityTrackingStatuses = self._get(url, {"page": "0", "page_entries": "250", "sort": "name,asc"})
+        if isinstance(vulnerabilityTrackingStatuses, dict) and 'vulnerabilityTrackingStatus' in vulnerabilityTrackingStatuses:
+            vulnerabilityTrackingStatuses = vulnerabilityTrackingStatuses['vulnerabilityTrackingStatus']
+        if not vulnerabilityTrackingStatuses:
+            raise ValueError(f"No vulnerability tracking status found for project '{project_id}'")
+        page_url = f"{self.url_root}/group/guest/projects/-/project/detail/$(PROJECT_ID)#/tab-VulnerabilityTrackingsStatus"
+        for vulnerabilityTrackingStatus in vulnerabilityTrackingStatuses:
+            vulnerabilityTrackingStatus["WebpageUrl"] = page_url.replace("$(PROJECT_ID)", project_id)
+        return vulnerabilityTrackingStatuses
 
     def search_package(self, name: str, version: str | None = None, package_manager: str | None = None, package_url: str | None = None):
         url = f"{self.url_root}/resource/api/packages"
@@ -147,7 +170,18 @@ class SW360Client:
             params["packageManager"] = package_manager
         if package_url:
             params["packageUrl"] = package_url
-        return self._get(url, params)
+        packages = self._get(url, params)
+        if isinstance(packages, dict) and '_embedded' in packages and 'sw360:packages' in packages['_embedded']:
+            packages = packages['_embedded']['sw360:packages']
+        elif isinstance(packages, dict) and 'content' in packages:
+            packages = packages['content']
+        if not packages:
+            raise ValueError(f"No packages found with name '{name}'")
+        page_url = f"{self.url_root}/group/guest/packages?p_p_id=sw360_portlet_packages&p_p_lifecycle=0&_sw360_portlet_packages_pagename=detail&_sw360_portlet_packages_packageId=$(PACKAGE_ID)#/tab-Summary"
+        for package in packages:
+            package["WebpageUrl"] = page_url.replace("$(PACKAGE_ID)", package.get("id", ""))
+        packages.sort(key=lambda p: p.get("version", ""), reverse=True)
+        return packages
 
     def get_package(self, href: str):
         return self._get(href, {"allDetails": "true"})
@@ -202,11 +236,21 @@ def get_releases(project_id: str):
     return json_response
 
 
-@mcp.tool(name="get_vulnerabilities", description="Return vulnerabilities attached to a project.")
+@mcp.tool(name="get_vulnerabilities", description="Return the vulnerabilities for the given project.")
 def get_vulnerabilities(project_id: str):
     json_response = _client().get_vulnerabilities(project_id)
     if isinstance(json_response, dict) and '_embedded' in json_response and 'sw360:vulnerabilityDTOes' in json_response['_embedded']:
         json_response = json_response['_embedded']['sw360:vulnerabilityDTOes']
+    elif isinstance(json_response, dict) and 'content' in json_response:
+        json_response = json_response['content']
+    return json_response
+
+
+@mcp.tool(name="get_vulnerability_tracking_status", description="Return the vulnerability tracking status for the given project with all linked packages.")
+def get_vulnerability_tracking_status(project_id: str):
+    json_response = _client().get_vulnerability_tracking_status(project_id)
+    if isinstance(json_response, dict) and '_embedded' in json_response and 'sw360:vulnerabilityTrackingStatus' in json_response['_embedded']:
+        json_response = json_response['_embedded']['sw360:vulnerabilityTrackingStatus']
     elif isinstance(json_response, dict) and 'content' in json_response:
         json_response = json_response['content']
     return json_response

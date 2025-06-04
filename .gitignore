@@ -1,7 +1,6 @@
 .venv
-frontend/node_modules
 .env
-# static
+frontend/node_modules
 .azure/
 __pycache__/
 .ipynb_checkpoints/
@@ -9,3 +8,4 @@ mcp.json
 Lib/
 pyvenv.cfg
 scripts/
+Include/
