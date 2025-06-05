@@ -4,15 +4,13 @@ import json
 import os
 import logging
 import uuid
-from base64 import b64encode
-import base64
+import asyncio
+import httpx
 from flask import Flask, Response, request, jsonify, send_from_directory
 from dotenv import load_dotenv
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import ContainerClient, BlobServiceClient, generate_container_sas, ContainerSasPermissions
 from urllib.parse import urlparse
-import httpx
-import asyncio
 from quart import (
     Blueprint,
     Quart,
@@ -23,7 +21,6 @@ from quart import (
     render_template,
     current_app,
 )
-
 from openai import AsyncAzureOpenAI
 from azure.identity.aio import (
     DefaultAzureCredential,
@@ -43,21 +40,12 @@ from backend.utils import (
     convert_to_pf_format,
     format_pf_non_streaming_response,
 )
-
-# FastMCP 2 client for MCP integration
 from fastmcp import Client
-
-
-if os.path.exists(".env"):
-    # Load environment variables from .env file
-    logging.info("Loading environment variables from .env file")
-    load_dotenv()
-
+from backend.mcp_manager import MCPServerManager
 
 bp = Blueprint("routes", __name__, static_folder="static", template_folder="static")
 
 cosmos_db_ready = asyncio.Event()
-
 
 def create_app():
     app = Quart(__name__)
@@ -74,14 +62,13 @@ def create_app():
             app.cosmos_conversation_client = None
             raise e
         
-        # Initialize MCP clients (non-blocking)
+        # Initialize MCP servers (non-blocking)
         try:
-            await init_sw360_mcp_client()
+            await init_mcp_servers()
         except Exception as e:
-            logging.warning(f"SW360 MCP client initialization failed (optional): {e}")
+            logging.warning(f"MCP server initialization failed (optional): {e}")
     
     return app
-
 
 @bp.route("/")
 async def index():
@@ -91,16 +78,13 @@ async def index():
         favicon=app_settings.ui.favicon
     )
 
-
 @bp.route("/favicon.ico")
 async def favicon():
     return await bp.send_static_file("favicon.ico")
 
-
 @bp.route("/assets/<path:path>")
 async def assets(path):
     return await send_from_directory("static/assets", path)
-
 
 # Debug settings
 DEBUG = os.environ.get("DEBUG", "false")
@@ -108,100 +92,6 @@ if DEBUG.lower() == "true":
     logging.basicConfig(level=logging.DEBUG)
 
 USER_AGENT = "GitHubSampleWebApp/AsyncAzureOpenAI/1.0.0"
-
-# Chat with data: common settings
-SEARCH_TOP_K=5
-SEARCH_STRICTNESS=3
-SEARCH_ENABLE_IN_DOMAIN=True
-
-# ACS Integration Settings
-AZURE_SEARCH_SERVICE = os.environ.get("AZURE_SEARCH_SERVICE")
-AZURE_SEARCH_INDEX = os.environ.get("AZURE_SEARCH_INDEX")
-AZURE_SEARCH_KEY = os.environ.get("AZURE_SEARCH_KEY")
-AZURE_SEARCH_USE_SEMANTIC_SEARCH = os.environ.get("AZURE_SEARCH_USE_SEMANTIC_SEARCH", "false")
-AZURE_SEARCH_SEMANTIC_SEARCH_CONFIG = os.environ.get("AZURE_SEARCH_SEMANTIC_SEARCH_CONFIG", "default")
-AZURE_SEARCH_TOP_K = os.environ.get("AZURE_SEARCH_TOP_K", SEARCH_TOP_K)
-AZURE_SEARCH_ENABLE_IN_DOMAIN = os.environ.get("AZURE_SEARCH_ENABLE_IN_DOMAIN", SEARCH_ENABLE_IN_DOMAIN)
-AZURE_SEARCH_CONTENT_COLUMNS = os.environ.get("AZURE_SEARCH_CONTENT_COLUMNS")
-AZURE_SEARCH_FILENAME_COLUMN = os.environ.get("AZURE_SEARCH_FILENAME_COLUMN")
-AZURE_SEARCH_TITLE_COLUMN = os.environ.get("AZURE_SEARCH_TITLE_COLUMN")
-AZURE_SEARCH_URL_COLUMN = os.environ.get("AZURE_SEARCH_URL_COLUMN")
-AZURE_SEARCH_VECTOR_COLUMNS = os.environ.get("AZURE_SEARCH_VECTOR_COLUMNS")
-AZURE_SEARCH_QUERY_TYPE = os.environ.get("AZURE_SEARCH_QUERY_TYPE")
-AZURE_SEARCH_PERMITTED_GROUPS_COLUMN = os.environ.get("AZURE_SEARCH_PERMITTED_GROUPS_COLUMN")
-AZURE_SEARCH_STRICTNESS = os.environ.get("AZURE_SEARCH_STRICTNESS", SEARCH_STRICTNESS)
-
-AZURE_SEARCH_CITATION_FILE_STORAGE_ACCOUNTKEY = os.environ.get("AZURE_SEARCH_CITATION_FILE_STORAGE_ACCOUNTKEY")
-AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL = os.environ.get("AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL")
-AZURE_SEARCH_CITATION_FILE_LINK_BASEURL = os.environ.get("AZURE_SEARCH_CITATION_FILE_LINK_BASEURL")
-AZURE_SEARCH_CITATION_FILE_LINK_URLAPPENDIX = os.environ.get("AZURE_SEARCH_CITATION_FILE_LINK_URLAPPENDIX")
-
-# AOAI Integration Settings
-AZURE_OPENAI_RESOURCE = os.environ.get("AZURE_OPENAI_RESOURCE")
-AZURE_OPENAI_MODEL = os.environ.get("AZURE_OPENAI_MODEL")
-AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT")
-AZURE_OPENAI_KEY = os.environ.get("AZURE_OPENAI_KEY")
-AZURE_OPENAI_TEMPERATURE = os.environ.get("AZURE_OPENAI_TEMPERATURE", 0)
-AZURE_OPENAI_TOP_P = os.environ.get("AZURE_OPENAI_TOP_P", 1.0)
-AZURE_OPENAI_MAX_TOKENS = os.environ.get("AZURE_OPENAI_MAX_TOKENS", 1000)
-AZURE_OPENAI_STOP_SEQUENCE = os.environ.get("AZURE_OPENAI_STOP_SEQUENCE")
-
-# AZURE_OPENAI_SYSTEM_MESSAGE: decode from Base64 if set in environment
-_az_sys_msg_env = os.environ.get("AZURE_OPENAI_SYSTEM_MESSAGE")
-if _az_sys_msg_env is not None:
-    try:
-        AZURE_OPENAI_SYSTEM_MESSAGE = base64.b64decode(_az_sys_msg_env).decode("utf-8")
-        # Also update the value in app settings
-        app_settings.azure_openai.system_message = AZURE_OPENAI_SYSTEM_MESSAGE
-    except Exception:
-        AZURE_OPENAI_SYSTEM_MESSAGE = _az_sys_msg_env  # fallback to raw if decode fails
-else:
-    AZURE_OPENAI_SYSTEM_MESSAGE = "You are an AI assistant that helps people find information."
-
-AZURE_OPENAI_PREVIEW_API_VERSION = os.environ.get("AZURE_OPENAI_PREVIEW_API_VERSION", "2023-08-01-preview")
-AZURE_OPENAI_STREAM = os.environ.get("AZURE_OPENAI_STREAM", "true")
-AZURE_OPENAI_MODEL_NAME = os.environ.get("AZURE_OPENAI_MODEL_NAME", "gpt-35-turbo-16k") # Name of the model, e.g. 'gpt-35-turbo-16k' or 'gpt-4'
-AZURE_OPENAI_EMBEDDING_ENDPOINT = os.environ.get("AZURE_OPENAI_EMBEDDING_ENDPOINT")
-AZURE_OPENAI_EMBEDDING_KEY = os.environ.get("AZURE_OPENAI_EMBEDDING_KEY")
-AZURE_OPENAI_EMBEDDING_NAME = os.environ.get("AZURE_OPENAI_EMBEDDING_NAME", "")
-
-# CosmosDB Mongo vcore vector db Settings
-AZURE_COSMOSDB_MONGO_VCORE_CONNECTION_STRING = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_CONNECTION_STRING")  #This has to be secure string
-AZURE_COSMOSDB_MONGO_VCORE_DATABASE = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_DATABASE")
-AZURE_COSMOSDB_MONGO_VCORE_CONTAINER = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_CONTAINER")
-AZURE_COSMOSDB_MONGO_VCORE_INDEX = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_INDEX")
-AZURE_COSMOSDB_MONGO_VCORE_TOP_K = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_TOP_K", AZURE_SEARCH_TOP_K)
-AZURE_COSMOSDB_MONGO_VCORE_STRICTNESS = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_STRICTNESS", AZURE_SEARCH_STRICTNESS)  
-AZURE_COSMOSDB_MONGO_VCORE_ENABLE_IN_DOMAIN = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_ENABLE_IN_DOMAIN", AZURE_SEARCH_ENABLE_IN_DOMAIN)
-AZURE_COSMOSDB_MONGO_VCORE_CONTENT_COLUMNS = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_CONTENT_COLUMNS", "")
-AZURE_COSMOSDB_MONGO_VCORE_FILENAME_COLUMN = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_FILENAME_COLUMN")
-AZURE_COSMOSDB_MONGO_VCORE_TITLE_COLUMN = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_TITLE_COLUMN")
-AZURE_COSMOSDB_MONGO_VCORE_URL_COLUMN = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_URL_COLUMN")
-AZURE_COSMOSDB_MONGO_VCORE_VECTOR_COLUMNS = os.environ.get("AZURE_COSMOSDB_MONGO_VCORE_VECTOR_COLUMNS")
-
-SHOULD_STREAM = True if AZURE_OPENAI_STREAM.lower() == "true" else False
-
-# Chat History CosmosDB Integration Settings
-AZURE_COSMOSDB_DATABASE = os.environ.get("AZURE_COSMOSDB_DATABASE")
-AZURE_COSMOSDB_ACCOUNT = os.environ.get("AZURE_COSMOSDB_ACCOUNT")
-AZURE_COSMOSDB_CONVERSATIONS_CONTAINER = os.environ.get("AZURE_COSMOSDB_CONVERSATIONS_CONTAINER")
-AZURE_COSMOSDB_ACCOUNT_KEY = os.environ.get("AZURE_COSMOSDB_ACCOUNT_KEY")
-AZURE_COSMOSDB_ENABLE_FEEDBACK = os.environ.get("AZURE_COSMOSDB_ENABLE_FEEDBACK", "false").lower() == "true"
-
-# Elasticsearch Integration Settings
-ELASTICSEARCH_ENDPOINT = os.environ.get("ELASTICSEARCH_ENDPOINT")
-ELASTICSEARCH_ENCODED_API_KEY = os.environ.get("ELASTICSEARCH_ENCODED_API_KEY")
-ELASTICSEARCH_INDEX = os.environ.get("ELASTICSEARCH_INDEX")
-ELASTICSEARCH_QUERY_TYPE = os.environ.get("ELASTICSEARCH_QUERY_TYPE", "simple")
-ELASTICSEARCH_TOP_K = os.environ.get("ELASTICSEARCH_TOP_K", SEARCH_TOP_K)
-ELASTICSEARCH_ENABLE_IN_DOMAIN = os.environ.get("ELASTICSEARCH_ENABLE_IN_DOMAIN", SEARCH_ENABLE_IN_DOMAIN)
-ELASTICSEARCH_CONTENT_COLUMNS = os.environ.get("ELASTICSEARCH_CONTENT_COLUMNS")
-ELASTICSEARCH_FILENAME_COLUMN = os.environ.get("ELASTICSEARCH_FILENAME_COLUMN")
-ELASTICSEARCH_TITLE_COLUMN = os.environ.get("ELASTICSEARCH_TITLE_COLUMN")
-ELASTICSEARCH_URL_COLUMN = os.environ.get("ELASTICSEARCH_URL_COLUMN")
-ELASTICSEARCH_VECTOR_COLUMNS = os.environ.get("ELASTICSEARCH_VECTOR_COLUMNS")
-ELASTICSEARCH_STRICTNESS = os.environ.get("ELASTICSEARCH_STRICTNESS", SEARCH_STRICTNESS)
-ELASTICSEARCH_EMBEDDING_MODEL_ID = os.environ.get("ELASTICSEARCH_EMBEDDING_MODEL_ID")
 
 # Frontend Settings via Environment Variables
 frontend_settings = {
@@ -223,17 +113,8 @@ frontend_settings = {
     "oyd_enabled": app_settings.base_settings.datasource_type,
 }
 
-
-# Enable Microsoft Defender for Cloud Integration
-MS_DEFENDER_ENABLED = os.environ.get("MS_DEFENDER_ENABLED", "true").lower() == "true"
-
-
-azure_openai_tools = []
-azure_openai_available_tools = []
-
-# MCP Client and Tools
-sw360_mcp_client = None
-local_mcp_tools = []
+# MCP Server Manager
+mcp_manager = MCPServerManager()
 mcp_tools_initialized = False
 
 # Azure OpenAI Client cache
@@ -241,7 +122,7 @@ azure_openai_client_cache = None
 
 # Initialize Azure OpenAI Client
 async def init_openai_client():
-    global azure_openai_client_cache, mcp_tools_initialized
+    global azure_openai_client_cache
     
     # Return cached client if available
     if azure_openai_client_cache is not None:
@@ -292,37 +173,6 @@ async def init_openai_client():
 
         # Default Headers
         default_headers = {"x-ms-useragent": USER_AGENT}
-
-        # Remote function calls - only initialize once
-        if app_settings.azure_openai.function_call_azure_functions_enabled and not mcp_tools_initialized:
-            azure_functions_tools_url = f"{app_settings.azure_openai.function_call_azure_functions_tools_base_url}?code={app_settings.azure_openai.function_call_azure_functions_tools_key}"
-            async with httpx.AsyncClient() as client:
-                response = await client.get(azure_functions_tools_url)
-            response_status_code = response.status_code
-            if response_status_code == httpx.codes.OK:
-                new_tools = json.loads(response.text)
-                # Add tools with deduplication
-                for tool in new_tools:
-                    tool_name = tool["function"]["name"]
-                    if tool_name not in azure_openai_available_tools:
-                        azure_openai_tools.append(tool)
-                        azure_openai_available_tools.append(tool_name)
-            else:
-                logging.error(f"An error occurred while getting OpenAI Function Call tools metadata: {response.status_code}")
-
-        # Add MCP tools with deduplication - only if not already initialized
-        if local_mcp_tools and not mcp_tools_initialized:
-            added_count = 0
-            for tool in local_mcp_tools:
-                tool_name = tool["function"]["name"]
-                if tool_name not in azure_openai_available_tools:
-                    azure_openai_tools.append(tool)
-                    azure_openai_available_tools.append(tool_name)
-                    added_count += 1
-            logging.info(f"Added {added_count} local MCP tools to available tools")
-        
-        # Mark tools as initialized
-        mcp_tools_initialized = True
         
         azure_openai_client = AsyncAzureOpenAI(
             api_version=app_settings.azure_openai.preview_api_version,
@@ -340,21 +190,29 @@ async def init_openai_client():
         azure_openai_client = None
         raise e
 
-async def openai_remote_azure_function_call(function_name, function_args):
-    if app_settings.azure_openai.function_call_azure_functions_enabled is not True:
-        return
-
-    azure_functions_tool_url = f"{app_settings.azure_openai.function_call_azure_functions_tool_base_url}?code={app_settings.azure_openai.function_call_azure_functions_tool_key}"
-    headers = {'content-type': 'application/json'}
-    body = {
-        "tool_name": function_name,
-        "tool_arguments": json.loads(function_args)
-    }
-    async with httpx.AsyncClient() as client:
-        response = await client.post(azure_functions_tool_url, data=json.dumps(body), headers=headers)
-    response.raise_for_status()
-
-    return response.text
+async def init_mcp_servers():
+    """Initialize all configured MCP servers"""
+    global mcp_manager, mcp_tools_initialized
+    
+    try:
+        # Initialize all MCP servers
+        initialized_count = await mcp_manager.initialize_all_servers()
+        
+        if initialized_count > 0:
+            logging.info(f"Successfully initialized {initialized_count} MCP servers")
+            
+            # Get MCP tools from the manager
+            mcp_tools = mcp_manager.get_tools()
+            logging.info(f"Available {len(mcp_tools)} MCP tools")
+        else:
+            logging.info("No MCP servers were initialized")
+        
+        # Mark MCP tools as initialized
+        mcp_tools_initialized = True
+        
+    except Exception as e:
+        logging.exception(f"Failed to initialize MCP servers: {e}")
+        raise e
 
 async def init_cosmosdb_client():
     cosmos_conversation_client = None
@@ -387,74 +245,22 @@ async def init_cosmosdb_client():
 
     return cosmos_conversation_client
 
-
-async def init_sw360_mcp_client():
-    """Initialize SW360 MCP client and load available tools"""
-    global sw360_mcp_client, local_mcp_tools
+async def call_mcp_tool(tool_name: str, tool_args: dict) -> str:
+    """Call a MCP tool via the MCP manager
     
-    # Return existing client if already initialized
-    if sw360_mcp_client is not None:
-        logging.debug("SW360 MCP client already initialized, reusing existing client")
-        return sw360_mcp_client
+    This function handles both local and remote MCP servers transparently
+    through the unified MCPServerManager.
+    """
+    global mcp_manager
     
     try:
-        # Check if SW360 environment variables are set
-        sw360_api_key = os.environ.get("SW360_API_KEY")
-        sw360_url_root = os.environ.get("SW360_URL_ROOT")
-        
-        if not sw360_api_key or not sw360_url_root:
-            logging.info("SW360 MCP client not configured (missing SW360_API_KEY or SW360_URL_ROOT)")
-            return None
-            
-        # Path to SW360 MCP server script
-        sw360_server_path = os.path.join(os.path.dirname(__file__), "sw360_mcp_server.py")
-        
-        if not os.path.exists(sw360_server_path):
-            logging.error(f"SW360 MCP server script not found at {sw360_server_path}")
-            return None
-            
-        # Initialize MCP client with STDIO transport to the SW360 server
-        # Import the transport to pass environment variables to the subprocess
-        from fastmcp.client.transports import PythonStdioTransport
-        
-        # Create transport with environment variables
-        transport = PythonStdioTransport(
-            script_path=sw360_server_path,
-            env={
-                "SW360_API_KEY": sw360_api_key,
-                "SW360_URL_ROOT": sw360_url_root
-            }
-        )
-        
-        # Create client with the configured transport
-        sw360_mcp_client = Client(transport)
-        
-        # Connect and get available tools
-        async with sw360_mcp_client as client:
-            tools_list = await client.list_tools()
-            
-            # Convert MCP tools to OpenAI function format
-            for tool in tools_list:
-                openai_tool = {
-                    "type": "function",
-                    "function": {
-                        "name": f"local_sw360_{tool.name}",
-                        "description": tool.description,
-                        "parameters": tool.inputSchema
-                    }
-                }
-                local_mcp_tools.append(openai_tool)
-                
-        logging.info(f"SW360 MCP client initialized with {len(tools_list)} tools")
-        return sw360_mcp_client
-        
+        return await mcp_manager.call_tool(tool_name, tool_args)
     except Exception as e:
-        logging.exception(f"Failed to initialize SW360 MCP client: {e}")
-        sw360_mcp_client = None
-        return None
-
+        logging.error(f"Error calling MCP tool {tool_name}: {e}")
+        return f"Error: {str(e)}"
 
 def prepare_model_args(request_body, request_headers):
+    """Prepare model arguments for OpenAI API call"""
     request_messages = request_body.get("messages", [])
     messages = []
     if not app_settings.datasource:
@@ -489,9 +295,8 @@ def prepare_model_args(request_body, request_headers):
                     
                     messages.append(messages_helper)
 
-
     user_json = None
-    if (MS_DEFENDER_ENABLED):
+    if (app_settings.base_settings.ms_defender_enabled):
         authenticated_user_details = get_authenticated_user_details(request_headers)
         conversation_id = request_body.get("conversation_id", None)
         application_name = app_settings.ui.title
@@ -510,8 +315,9 @@ def prepare_model_args(request_body, request_headers):
 
     if len(messages) > 0:
         if messages[-1]["role"] == "user":
-            if len(azure_openai_tools) > 0:
-                model_args["tools"] = azure_openai_tools
+            tools = mcp_manager.get_tools()
+            if len(tools) > 0:
+                model_args["tools"] = tools
 
             if app_settings.datasource:
                 model_args["extra_body"] = {
@@ -560,7 +366,6 @@ def prepare_model_args(request_body, request_headers):
 
     return model_args
 
-
 async def promptflow_request(request):
     try:
         headers = {
@@ -593,55 +398,22 @@ async def promptflow_request(request):
     except Exception as e:
         logging.error(f"An error occurred while making promptflow_request: {e}")
 
-
-async def call_local_mcp_tool(tool_name: str, tool_args: dict):
-    """Call a MCP tool via the global MCP client"""
-    global sw360_mcp_client
-    
-    try:
-        actual_tool_name = tool_name
-        mcp_client = None
-
-        if tool_name.startswith('local_sw360_'):
-            if not sw360_mcp_client:
-                raise RuntimeError("SW360 MCP client not initialized")
-            mcp_client = sw360_mcp_client
-            actual_tool_name = tool_name[12:]
-        
-        async with mcp_client as client:
-            result = await client.call_tool(actual_tool_name, tool_args)
-            if result is not None and hasattr(result, "__len__") and len(result) > 0 and hasattr(result[0], "text"):
-                return result[0].text
-            else:
-                return str(result)            
-    except Exception as e:
-        logging.error(f"Error calling MCP tool {tool_name}: {e}")
-        return f"Error: {str(e)}"
-
-
 async def process_function_call(response):
+    """Process function calls from OpenAI response"""
     response_message = response.choices[0].message
     messages = []
 
     if response_message.tool_calls:
         for tool_call in response_message.tool_calls:
             # Check if function exists
-            if tool_call.function.name not in azure_openai_available_tools:
+            if not mcp_manager.is_tool_available(tool_call.function.name):
                 continue
             
-            # Determine if this is a local MCP tool or Azure Function tool
-            if tool_call.function.name.startswith('local_'):
-                # Handle local MCP tool call
-                function_response = await call_local_mcp_tool(
-                    tool_call.function.name, 
-                    json.loads(tool_call.function.arguments)
-                )
-            else:
-                # Handle Azure Function tool call
-                function_response = await openai_remote_azure_function_call(
-                    tool_call.function.name, 
-                    tool_call.function.arguments
-                )
+            # Use unified MCP manager for all tool calls
+            function_response = await call_mcp_tool(
+                tool_call.function.name, 
+                json.loads(tool_call.function.arguments)
+            )
 
             # adding assistant response to messages
             messages.append(
@@ -668,6 +440,22 @@ async def process_function_call(response):
     
     return None
 
+async def generate_title(messages):
+    """Generate a title for the conversation based on the messages"""
+    try:
+        # Simple title generation based on first user message
+        if messages and len(messages) > 0:
+            for message in messages:
+                if message.get("role") == "user" and message.get("content"):
+                    content = message["content"]
+                    # Truncate to first 50 characters for title
+                    title = content[:50] + "..." if len(content) > 50 else content
+                    return title
+        return f"Chat {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    except Exception as e:
+        logging.error(f"Error generating title: {e}")
+        return f"Chat {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
 async def send_chat_request(request_body, request_headers):
     filtered_messages = []
     messages = request_body.get("messages", [])
@@ -676,10 +464,13 @@ async def send_chat_request(request_body, request_headers):
             filtered_messages.append(message)
             
     request_body['messages'] = filtered_messages
-    model_args = prepare_model_args(request_body, request_headers)
-
+    
     try:
+        # Initialize OpenAI client and MCP tools BEFORE preparing model args
         azure_openai_client = await init_openai_client()
+        # Now prepare model args with tools available
+        model_args = prepare_model_args(request_body, request_headers)
+        
         raw_response = await azure_openai_client.chat.completions.with_raw_response.create(**model_args)
         response = raw_response.parse()
         apim_request_id = raw_response.headers.get("apim-request-id") 
@@ -688,7 +479,6 @@ async def send_chat_request(request_body, request_headers):
         raise e
 
     return response, apim_request_id
-
 
 async def complete_chat_request(request_body, request_headers):
     if app_settings.base_settings.use_promptflow:
@@ -705,7 +495,8 @@ async def complete_chat_request(request_body, request_headers):
         history_metadata = request_body.get("history_metadata", {})
         non_streaming_response = format_non_streaming_response(response, history_metadata, apim_request_id)
 
-        if len(azure_openai_tools) > 0:
+        tools = mcp_manager.get_tools()
+        if len(tools) > 0:
             function_response = await process_function_call(response)  # Add await here
 
             if function_response:
@@ -725,7 +516,6 @@ class AzureOpenaiFunctionCallStreamState():
         self.current_tool_call = None       # JSON with the tool name and arguments currently being streamed
         self.function_messages = []         # All function messages to be appended to the chat history
         self.streaming_state = "INITIAL"    # Streaming state (INITIAL, STREAMING, COMPLETED)
-
 
 async def process_function_call_stream(completionChunk, function_call_stream_state, request_body, request_headers, history_metadata, apim_request_id):
     if hasattr(completionChunk, "choices") and len(completionChunk.choices) > 0:
@@ -757,16 +547,11 @@ async def process_function_call_stream(completionChunk, function_call_stream_sta
             function_call_stream_state.tool_calls.append(function_call_stream_state.current_tool_call)
             
             for tool_call in function_call_stream_state.tool_calls:
-                # Determine if this is a local MCP tool or Azure Function tool
-                if tool_call["tool_name"].startswith('local_'):
-                    # Handle local MCP tool call
-                    tool_response = await call_local_mcp_tool(
-                        tool_call["tool_name"], 
-                        json.loads(tool_call["tool_arguments"])
-                    )
-                else:
-                    # Handle Azure Function tool call
-                    tool_response = await openai_remote_azure_function_call(tool_call["tool_name"], tool_call["tool_arguments"])
+                # Use unified MCP manager for all tool calls
+                tool_response = await call_mcp_tool(
+                    tool_call["tool_name"], 
+                    json.loads(tool_call["tool_arguments"])
+                )
 
                 function_call_stream_state.function_messages.append({
                     "role": "assistant",
@@ -789,13 +574,13 @@ async def process_function_call_stream(completionChunk, function_call_stream_sta
         else:
             return function_call_stream_state.streaming_state
 
-
 async def stream_chat_request(request_body, request_headers):
     response, apim_request_id = await send_chat_request(request_body, request_headers)
     history_metadata = request_body.get("history_metadata", {})
     
     async def generate(apim_request_id, history_metadata):
-        if len(azure_openai_tools) > 0:
+        tools = mcp_manager.get_tools()
+        if len(tools) > 0:
             # Maintain state during function call streaming
             function_call_stream_state = AzureOpenaiFunctionCallStreamState()
             
@@ -820,7 +605,6 @@ async def stream_chat_request(request_body, request_headers):
 
     return generate(apim_request_id=apim_request_id, history_metadata=history_metadata)
 
-
 async def conversation_internal(request_body, request_headers):
     try:
         if app_settings.azure_openai.stream and not app_settings.base_settings.use_promptflow:
@@ -840,7 +624,6 @@ async def conversation_internal(request_body, request_headers):
         else:
             return jsonify({"error": str(ex)}), 500
 
-
 @bp.route("/conversation", methods=["POST"])
 async def conversation():
     if not request.is_json:
@@ -849,7 +632,6 @@ async def conversation():
 
     return await conversation_internal(request_json, request.headers)
 
-
 @bp.route("/frontend_settings", methods=["GET"])
 def get_frontend_settings():
     try:
@@ -857,7 +639,6 @@ def get_frontend_settings():
     except Exception as e:
         logging.exception("Exception in /frontend_settings")
         return jsonify({"error": str(e)}), 500
-
 
 ## Conversation History API ##
 @bp.route("/history/generate", methods=["POST"])
@@ -915,7 +696,6 @@ async def add_conversation():
         logging.exception("Exception in /history/generate")
         return jsonify({"error": str(e)}), 500
 
-
 @bp.route("/history/update", methods=["POST"])
 async def update_conversation():
     await cosmos_db_ready.wait()
@@ -965,7 +745,6 @@ async def update_conversation():
         logging.exception("Exception in /history/update")
         return jsonify({"error": str(e)}), 500
 
-
 @bp.route("/history/message_feedback", methods=["POST"])
 async def update_message():
     await cosmos_db_ready.wait()
@@ -1011,7 +790,6 @@ async def update_message():
         logging.exception("Exception in /history/message_feedback")
         return jsonify({"error": str(e)}), 500
 
-
 @bp.route("/history/delete", methods=["DELETE"])
 async def delete_conversation():
     await cosmos_db_ready.wait()
@@ -1054,7 +832,6 @@ async def delete_conversation():
         logging.exception("Exception in /history/delete")
         return jsonify({"error": str(e)}), 500
 
-
 @bp.route("/history/list", methods=["GET"])
 async def list_conversations():
     await cosmos_db_ready.wait()
@@ -1076,7 +853,6 @@ async def list_conversations():
     ## return the conversation ids
 
     return jsonify(conversations), 200
-
 
 @bp.route("/history/read", methods=["POST"])
 async def get_conversation():
@@ -1129,7 +905,6 @@ async def get_conversation():
 
     return jsonify({"conversation_id": conversation_id, "messages": messages}), 200
 
-
 @bp.route("/history/rename", methods=["POST"])
 async def rename_conversation():
     await cosmos_db_ready.wait()
@@ -1171,7 +946,6 @@ async def rename_conversation():
     )
 
     return jsonify(updated_conversation), 200
-
 
 @bp.route("/history/delete_all", methods=["DELETE"])
 async def delete_all_conversations():
@@ -1216,7 +990,6 @@ async def delete_all_conversations():
         logging.exception("Exception in /history/delete_all")
         return jsonify({"error": str(e)}), 500
 
-
 @bp.route("/history/clear", methods=["POST"])
 async def clear_messages():
     await cosmos_db_ready.wait()
@@ -1253,7 +1026,6 @@ async def clear_messages():
     except Exception as e:
         logging.exception("Exception in /history/clear_messages")
         return jsonify({"error": str(e)}), 500
-
 
 @bp.route("/history/ensure", methods=["GET"])
 async def ensure_cosmos():
@@ -1295,7 +1067,6 @@ async def ensure_cosmos():
         else:
             return jsonify({"error": "CosmosDB is not working"}), 500
 
-
 async def generate_title(conversation_messages) -> str:
     ## make sure the messages are sorted by _ts descending
     title_prompt = "Summarize the conversation so far into a 4-word or less title. Do not use any quotation marks or punctuation. Do not include any other commentary or description."
@@ -1317,7 +1088,6 @@ async def generate_title(conversation_messages) -> str:
     except Exception as e:
         logging.exception("Exception while generating title", e)
         return messages[-2]["content"]
-
 
 # Parse the provided URL
 def parse_url(url):
@@ -1344,9 +1114,14 @@ def create_service_sas_container(container_client: 'ContainerClient', account_ke
 @bp.route("/citationConfig", methods=["GET"])
 def citationConfig():
     try:
-        return jsonify(FileStorageBaseUrl=AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL,
-                       FileLinkBaseUrl=AZURE_SEARCH_CITATION_FILE_LINK_BASEURL,
-                       FileLinkUrlAppendix=AZURE_SEARCH_CITATION_FILE_LINK_URLAPPENDIX), 200
+        citation_config = {}
+        if app_settings.citation_file:
+            citation_config = {
+                "FileStorageBaseUrl": app_settings.citation_file.storage_base_url,
+                "FileLinkBaseUrl": app_settings.citation_file.link_base_url,
+                "FileLinkUrlAppendix": app_settings.citation_file.link_url_appendix
+            }
+        return jsonify(citation_config), 200
     except Exception as e:
         details = jsonify({"error": str(e)})
         logging.exception("Exception in /citationConfig: ", details)
@@ -1355,8 +1130,11 @@ def citationConfig():
 @bp.route("/storageSas", methods=["GET"])
 def storageSas():
     try:
-        account_name, container_name = parse_url(AZURE_SEARCH_CITATION_FILE_STORAGE_BASEURL)
-        account_key = AZURE_SEARCH_CITATION_FILE_STORAGE_ACCOUNTKEY
+        if not app_settings.citation_file or not app_settings.citation_file.storage_base_url:
+            return jsonify({"error": "Citation file storage not configured"}), 400
+            
+        account_name, container_name = parse_url(app_settings.citation_file.storage_base_url)
+        account_key = app_settings.citation_file.storage_account_key
         credential = DefaultAzureCredential()
         container_client = ContainerClient(account_url=f"https://{account_name}.blob.core.windows.net", container_name=container_name, credential=credential)
         sas_token = create_service_sas_container(container_client, account_key)

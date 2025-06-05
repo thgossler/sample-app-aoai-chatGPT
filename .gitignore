@@ -9,3 +9,5 @@ Lib/
 pyvenv.cfg
 scripts/
 Include/
+local/
+temp/

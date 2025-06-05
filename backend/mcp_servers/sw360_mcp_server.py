@@ -97,6 +97,21 @@ class SW360Client:
             url = _build_query_url(url, params)
         return _send_get(url, self.api_key)
 
+    def _add_html_url(self, item: Any, html_url: str):
+        success = False
+        try:
+            if isinstance(item, dict):
+                item["html_url"] = html_url
+                if "_links" in item:
+                    item["_links"]["alternate"] = {
+                        "href": html_url,
+                        "type": "text/html"
+                    }
+                success = True
+        except Exception as e:
+            success = False
+        return success
+
     # -------------------------- public API -----------------------------
     def get_project(self, project_id: str):
         url = f"{self.url_root}/resource/api/projects/{project_id}"
@@ -125,7 +140,7 @@ class SW360Client:
         for project in projects:
             if "name" in project and "version" in project:
                 project["name"] = f"{project['name']} ({project['version']})"
-            project["WebpageUrl"] = f"{page_url}{project['id']}"
+            self._add_html_url(project, f"{page_url}{project['id']}")
         return projects
 
     def get_releases(self, project_id: str):
@@ -143,7 +158,8 @@ class SW360Client:
             raise ValueError(f"No vulnerabilities found for project '{project_id}'")
         page_url = f"{self.url_root}/group/guest/vulnerabilities?p_p_id=sw360_portlet_vulnerabilitites&p_p_lifecycle=0&_sw360_portlet_vulnerabilitites_pagename=detail&_sw360_portlet_vulnerabilitites_vulnerabilityId=$(VUL_ID)#/tab-Summary"
         for vulnerability in vulnerabilities:
-            vulnerability["WebpageUrl"] = page_url.replace("$(VUL_ID)", vulnerability.get("id", ""))
+            extId = vulnerability.get("externalId", None)
+            self._add_html_url(vulnerability, page_url.replace("$(VUL_ID)", vulnerability.get("externalId", ""))) if extId else None
         vulnerabilities.sort(key=lambda v: (v.get("priority", ""), v.get("externalId", "")), reverse=True)
         return vulnerabilities
 
@@ -156,7 +172,7 @@ class SW360Client:
             raise ValueError(f"No vulnerability tracking status found for project '{project_id}'")
         page_url = f"{self.url_root}/group/guest/projects/-/project/detail/$(PROJECT_ID)#/tab-VulnerabilityTrackingsStatus"
         for vulnerabilityTrackingStatus in vulnerabilityTrackingStatuses:
-            vulnerabilityTrackingStatus["WebpageUrl"] = page_url.replace("$(PROJECT_ID)", project_id)
+            self._add_html_url(vulnerabilityTrackingStatus, page_url.replace("$(PROJECT_ID)", project_id))
         return vulnerabilityTrackingStatuses
 
     def search_package(self, name: str, version: str | None = None, package_manager: str | None = None, package_url: str | None = None):
@@ -179,7 +195,7 @@ class SW360Client:
             raise ValueError(f"No packages found with name '{name}'")
         page_url = f"{self.url_root}/group/guest/packages?p_p_id=sw360_portlet_packages&p_p_lifecycle=0&_sw360_portlet_packages_pagename=detail&_sw360_portlet_packages_packageId=$(PACKAGE_ID)#/tab-Summary"
         for package in packages:
-            package["WebpageUrl"] = page_url.replace("$(PACKAGE_ID)", package.get("id", ""))
+            self._add_html_url(package, page_url.replace("$(PACKAGE_ID)", package.get("id", "")))
         packages.sort(key=lambda p: p.get("version", ""), reverse=True)
         return packages
 

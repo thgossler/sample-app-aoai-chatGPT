@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import base64
 from abc import ABC, abstractmethod
 from pydantic import (
     BaseModel,
@@ -80,6 +81,20 @@ class _PromptflowSettings(BaseSettings):
     request_field_name: str = "query"
     response_field_name: str = "reply"
     citations_field_name: str = "documents"
+
+
+class _CitationFileSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="AZURE_SEARCH_CITATION_FILE_",
+        env_file=DOTENV_PATH,
+        extra="ignore",
+        env_ignore_empty=True
+    )
+
+    storage_account_key: Optional[str] = None
+    storage_base_url: Optional[str] = None
+    link_base_url: Optional[str] = None
+    link_url_appendix: Optional[str] = None
 
 
 class _AzureOpenAIFunction(BaseModel):
@@ -163,14 +178,30 @@ class _AzureOpenAISettings(BaseSettings):
         
         return None
     
+    @field_validator('system_message', mode='before')
+    @classmethod
+    def decode_system_message(cls, system_message: str) -> str:
+        """Decode system message from base64 if it's base64 encoded, otherwise return as-is"""
+        if isinstance(system_message, str) and system_message:
+            try:
+                # Try to decode from base64
+                decoded = base64.b64decode(system_message).decode("utf-8")
+                return decoded
+            except Exception:
+                # If decode fails, return the original value (it might be plain text)
+                return system_message
+        
+        # Return default if no system message is provided
+        return "You are an AI assistant that helps people find information."
+    
     @model_validator(mode="after")
     def ensure_endpoint(self) -> Self:
         if self.endpoint:
-            return Self
+            return self
         
         elif self.resource:
             self.endpoint = f"https://{self.resource}.openai.azure.com"
-            return Self
+            return self
         
         raise ValidationError("AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_RESOURCE is required")
         
@@ -315,6 +346,7 @@ class _AzureSearchSettings(BaseSettings, DatasourcePayloadConstructor):
     @model_validator(mode="after")
     def set_query_type(self) -> Self:
         self.query_type = to_snake(self.query_type)
+        return self
 
     def _set_filter_string(self, request: Request) -> str:
         if self.permitted_groups_column:
@@ -464,7 +496,6 @@ class _ElasticsearchSettings(BaseSettings, DatasourcePayloadConstructor):
             "type": "encoded_api_key",
             "encoded_api_key": self.encoded_api_key
         }
-        
         return self
     
     @model_validator(mode="after")
@@ -536,7 +567,6 @@ class _PineconeSettings(BaseSettings, DatasourcePayloadConstructor):
             "type": "api_key",
             "api_key": self.api_key
         }
-        
         return self
     
     @model_validator(mode="after")
@@ -757,6 +787,7 @@ class _BaseSettings(BaseSettings):
     auth_enabled: bool = True
     sanitize_answer: bool = False
     use_promptflow: bool = False
+    ms_defender_enabled: bool = True
 
 
 class _AppSettings(BaseModel):
@@ -764,6 +795,7 @@ class _AppSettings(BaseModel):
     azure_openai: _AzureOpenAISettings = _AzureOpenAISettings()
     search: _SearchCommonSettings = _SearchCommonSettings()
     ui: Optional[_UiSettings] = _UiSettings()
+    citation_file: Optional[_CitationFileSettings] = None
     
     # Constructed properties
     chat_history: Optional[_ChatHistorySettings] = None
@@ -774,20 +806,22 @@ class _AppSettings(BaseModel):
     def set_promptflow_settings(self) -> Self:
         try:
             self.promptflow = _PromptflowSettings()
-            
         except ValidationError:
             self.promptflow = None
-            
         return self
     
     @model_validator(mode="after")
     def set_chat_history_settings(self) -> Self:
         try:
             self.chat_history = _ChatHistorySettings()
-        
         except ValidationError:
             self.chat_history = None
-        
+        return self
+    
+    @model_validator(mode="after")
+    def set_citation_file_settings(self) -> Self:
+        # Always initialize citation file settings since all fields are optional
+        self.citation_file = _CitationFileSettings()
         return self
     
     @model_validator(mode="after")

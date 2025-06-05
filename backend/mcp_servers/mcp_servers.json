@@ -1,0 +1,35 @@
+{
+  "servers": [
+    {
+      "name": "sw360",
+      "type": "local_stdio",
+      "enabled": false,
+      "description": "SW360 MCP Server for component and vulnerability management",
+      "script_path": "sw360_mcp_server.py",
+      "tool_prefix": "local_sw360_",
+      "environment_variables": [
+        "SW360_API_KEY",
+        "SW360_URL_ROOT"
+      ],
+      "required_env_vars": [
+        "SW360_API_KEY", 
+        "SW360_URL_ROOT"
+      ]
+    },
+    {
+      "name": "azure_functions",
+      "type": "remote_http",
+      "enabled": false,
+      "description": "Azure Functions remote MCP tools",
+      "tool_prefix": "",
+      "config": {
+        "tool_endpoint": "${AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_TOOL_BASE_URL}",
+        "auth_type": "query_param",
+        "auth_param": "code",
+        "tool_auth_key": "${AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_TOOL_KEY}"
+      },
+      "environment_variables": [],
+      "required_env_vars": []
+    }
+  ]
+}

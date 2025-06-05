@@ -96,7 +96,6 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
         citation.filepath = sourceFile;
         citation.chunk_id = `${chunkIndex - 1}`;
         citation.part_index = chunkIndex;
-        citation.reindex_id = `${chunkIndex}`;
       }
     }
     else if (citation.filepath) {
@@ -109,12 +108,7 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
         citationFilename = `${citation.filepath}`
       }
       if (!omitPart) {
-        if (citation.filepath && citation.reindex_id) {
-          citationFilename += ` (part ${citation.reindex_id})`
-        }
-        else {
-          citationFilename += ` (part ${parseInt(citation.chunk_id ?? '0') + 1})`;
-        }
+        citationFilename += ` (part ${part_i})`;
       }
       citation.title = citationFilename;
     } else {

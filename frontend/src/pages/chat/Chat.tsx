@@ -747,8 +747,8 @@ const Chat = () => {
         }
         if (citationConfig.FileStorageBaseUrl != null && citationConfig.FileStorageBaseUrl.length > 0 &&
           citationConfig.FileLinkBaseUrl != null && citationConfig.FileLinkBaseUrl.length > 0) {
-          let lowercaseUrl = citation.url?.toLowerCase() ?? '';
-          if (lowercaseUrl.endsWith('.md') || lowercaseUrl.includes('.md#') || lowercaseUrl.includes('.md?')) {
+          let citationUrlLowercase = citation.url?.toLowerCase() ?? '';
+          if (citationUrlLowercase.endsWith('.md') || citationUrlLowercase.includes('.md#') || citationUrlLowercase.includes('.md?')) {
             var hostUrl = new URL(citationConfig.FileStorageBaseUrl);
             var hostPart = hostUrl.protocol + '//' + hostUrl.host;
             var blobContainerPart = hostPart + '/';
@@ -756,10 +756,8 @@ const Chat = () => {
             if (pathParts.length > 0) {
               blobContainerPart += pathParts[0];
             }
-            citation.url = lowercaseUrl;
-            blobContainerPart = blobContainerPart.toLowerCase();
-            if (citation.url?.includes(blobContainerPart)) {
-              var relFilePath = citation.url?.replace(blobContainerPart, '');
+            if (citationUrlLowercase?.startsWith(blobContainerPart.toLowerCase())) {
+              var relFilePath = citation.url?.substring(blobContainerPart.length) ?? '';
               if (citationConfig.FileLinkBaseUrl.includes('_wiki')) {
                 // workaround for Azure DevOps Wiki
                 relFilePath = relFilePath.replace(/\.md$/, '');

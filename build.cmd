@@ -2,30 +2,14 @@
 
 cd /D "%~dp0"
 
-echo.
-echo Restoring backend python packages
-echo.
-call python -m pip install -r requirements.txt
+call build_backend.cmd
 if "%errorlevel%" neq "0" (
-    echo Failed to restore backend python packages
+    echo Failed to build the project
     exit /B %errorlevel%
 )
 
-echo.
-echo Restoring frontend npm packages
-echo.
-cd frontend
-call npm install
+call build_frontend.cmd
 if "%errorlevel%" neq "0" (
-    echo Failed to restore frontend npm packages
-    exit /B %errorlevel%
-)
-
-echo.
-echo Building frontend
-echo.
-call npm run build
-if "%errorlevel%" neq "0" (
-    echo Failed to build frontend
+    echo Failed to build the project
     exit /B %errorlevel%
 )
