@@ -263,7 +263,8 @@ def prepare_model_args(request_body, request_headers):
     """Prepare model arguments for OpenAI API call"""
     request_messages = request_body.get("messages", [])
     messages = []
-    if not app_settings.datasource:
+    # Always include system message if configured
+    if app_settings.azure_openai.system_message:
         messages = [
             {
                 "role": "system",

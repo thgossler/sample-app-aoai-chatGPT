@@ -15,7 +15,7 @@ export const XSSAllowTags = [
   'small',
   'del',
   'img',
-  'pictrue',
+  'picture',
   'embed',
   'video',
   'audio',
@@ -40,7 +40,9 @@ export const XSSAllowTags = [
   'tfooter',
   'ul',
   'ol',
-  'li'
+  'li',
+  'b',
+  'br'
 ]
 
 export const XSSAllowAttributes = ['href']
