@@ -1,0 +1,54 @@
+.themeToggleRoot {
+  margin-left: 12; 
+  align-content: center; 
+  margin: 4px 0px 4px 12px
+}
+
+    .is-enabled {
+      color: var(--color-text);
+      background-color: var(--color-background);
+    }
+
+    .is-enabled:hover {
+      background-color: var(--color-background-hover);
+    }
+
+.themeToggleIconButton {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.themeToggleIconButton {
+  color: var(--color-text);
+}
+
+.themeToggleIconButton:hover {
+  color: var(--color-text);
+}
+
+:global(.theme-icon) {
+  display: block;
+  color: var(--color-text);
+  fill: var(--color-text);
+  width: 1.6rem;
+  height: 1.6rem;
+  transition: color 0.2s, filter 0.2s;
+}
+
+:global(.theme-icon) path {
+  fill: currentColor;
+  transition: filter 0.2s;
+}
+
+.themeToggleIconButton:hover :global(.theme-icon) path {
+  filter: brightness(1.3) !important;
+}
+body.dark .themeToggleIconButton:hover :global(.theme-icon) path,
+html.dark .themeToggleIconButton:hover :global(.theme-icon) path {
+  filter: brightness(0.7) !important;
+}

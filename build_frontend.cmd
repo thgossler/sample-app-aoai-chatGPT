@@ -1,6 +1,6 @@
 @echo off
 
-cd /D "%~dp0"
+pushd "%~dp0"
 
 echo.
 echo Restoring frontend npm packages
@@ -9,6 +9,7 @@ cd frontend
 call npm install
 if "%errorlevel%" neq "0" (
     echo Failed to restore frontend npm packages
+    popd
     exit /B %errorlevel%
 )
 
@@ -18,5 +19,8 @@ echo.
 call npm run build
 if "%errorlevel%" neq "0" (
     echo Failed to build frontend
+    popd
     exit /B %errorlevel%
 )
+
+popd

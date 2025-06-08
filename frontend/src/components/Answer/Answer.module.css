@@ -4,7 +4,8 @@
   align-items: flex-start;
   padding: 8.1285px;
   gap: 5.42px;
-  background: #ffffff;
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
   box-shadow:
     0px 1px 2px rgba(0, 0, 0, 0.14),
     0px 0px 2px rgba(0, 0, 0, 0.12);
@@ -16,7 +17,7 @@
   font-weight: 400;
   font-size: 14px;
   line-height: 20px;
-  color: #323130;
+  color: var(--color-text);
   flex: none;
   order: 1;
   align-self: stretch;
@@ -39,6 +40,8 @@
   height: auto;
   box-sizing: border-box;
   justify-content: space-between;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
 }
 
 .answerDisclaimerContainer {
@@ -55,7 +58,7 @@
   display: flex;
   align-items: center;
   text-align: center;
-  color: #707070;
+  color: var(--color-text-secondary);
   flex: none;
   order: 1;
   flex-grow: 0;
@@ -67,6 +70,7 @@
   flex-flow: wrap column;
   max-height: 150px;
   gap: 4px;
+  cursor: pointer;
 }
 
 .citationContainer {
@@ -76,19 +80,19 @@
   font-size: 12px;
   line-height: 16px;
 
-  color: #115ea3;
+  color: var(--color-accent);
   display: flex;
   flex-direction: row;
   align-items: center;
   padding: 4px 6px;
   gap: 4px;
-  border: 1px solid #d1d1d1;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
+  background: var(--color-bg-secondary);
 }
 
 .citationContainer:hover {
-  text-decoration: underline;
-  cursor: pointer;
+  background: var(--color-border);
 }
 
 .citation {
@@ -100,7 +104,7 @@
   padding: 0px;
   width: 14px;
   height: 14px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   flex: none;
   flex-grow: 0;
@@ -110,7 +114,8 @@
   font-size: 10px;
   line-height: 14px;
   text-align: center;
-  color: #424242;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
   cursor: pointer;
 }
 
@@ -126,7 +131,7 @@
   align-items: center;
   padding: 0px;
   margin-top: 4px;
-  color: #616161;
+  color: var(--color-text-secondary);
   font-size: 10px;
 }
 
@@ -143,7 +148,7 @@
   line-height: 16px;
   display: flex;
   align-items: center;
-  color: #616161;
+  color: var(--color-text-secondary);
 }
 
 .accordionTitle:hover {
@@ -159,7 +164,7 @@
   padding: 0px;
   width: 14px;
   height: 14px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   flex: none;
   order: 2;
@@ -170,7 +175,7 @@
   font-size: 10px;
   line-height: 14px;
   text-align: center;
-  color: #424242;
+  color: var(--color-text-secondary);
   cursor: pointer;
 }
 
@@ -200,4 +205,33 @@ sup {
   .answerDisclaimer {
     margin-bottom: 5px;
   }
+}
+
+body.dark .answerContainer {
+  background: var(--color-bg-secondary) !important;
+  color: var(--color-text) !important;
+}
+body.dark .answerText {
+  color: var(--color-text) !important;
+}
+body.dark .answerDisclaimer {
+  color: var(--color-text-secondary) !important;
+}
+body.dark .citationContainer {
+  color: var(--color-accent) !important;
+  background: var(--color-bg-secondary) !important;
+  border: 1px solid var(--color-border) !important;
+}
+body.dark .citation {
+  color: var(--color-text-secondary) !important;
+  background: var(--color-bg-secondary) !important;
+  border: 1px solid var(--color-border) !important;
+}
+body.dark .accordionIcon, body.dark .accordionTitle {
+  color: var(--color-text-secondary) !important;
+}
+body.dark .clickableSup {
+  color: var(--color-text-secondary) !important;
+  border: 1px solid var(--color-border) !important;
+  background: var(--color-bg-secondary) !important;
 }

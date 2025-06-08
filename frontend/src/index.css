@@ -10,7 +10,6 @@ body {
 }
 
 html {
-  background: #f2f2f2;
   font-family:
     'Segoe UI',
     'Segoe UI Web (West European)',
@@ -26,4 +25,136 @@ html {
 
 #root {
   height: 100%;
+}
+
+:root {
+  --color-bg: #f2f2f2;
+  --color-bg-secondary: #ffffff;
+  --color-text: #242424;
+  --color-text-secondary: #616161;
+  --color-border: #d1d1d1;
+  --color-accent: #F7931E;
+  --color-accent-light: #FFB347;
+  --color-accent-dark: #FF8C00;
+  --color-accent-bg: #FFF3E0;
+  --color-chat-user: #FFF3E0;
+  --color-chat-assistant: #f5f5f5;
+  --color-chat-error: #fff0f0;
+}
+
+body.light, html.light {
+  --color-bg: #f2f2f2;
+  --color-bg-secondary: #ffffff;
+  --color-text: #242424;
+  --color-text-secondary: #616161;
+  --color-border: #d1d1d1;
+  --color-accent: #F7931E;
+  --color-accent-light: #FFB347;
+  --color-accent-dark: #FF8C00;
+  --color-accent-bg: #FFF3E0;
+  --color-chat-user: #edf5fd;
+  --color-chat-assistant: #f5f5f5;
+  --color-chat-error: #fff0f0;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+body.dark, html.dark {
+  --color-bg: #181a1b;
+  --color-bg-secondary: #23272b;
+  --color-text: #f3f3f3;
+  --color-text-secondary: #bdbdbd;
+  --color-border: #333a41;
+  --color-accent: #F7931E;
+  --color-accent-light: #FFB347;
+  --color-accent-dark: #B85C00;
+  --color-accent-bg: #3a2a1b;
+  --color-chat-user: #3a2a1b;
+  --color-chat-assistant: #23272b;
+  --color-chat-error: #2d1a1a;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Fallback for prefers-color-scheme: dark */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) {
+    --color-bg: #181a1b;
+    --color-bg-secondary: #23272b;
+    --color-text: #f3f3f3;
+    --color-text-secondary: #bdbdbd;
+    --color-border: #333a41;
+    --color-accent: #F7931E;
+    --color-accent-light: #FFB347;
+    --color-accent-dark: #B85C00;
+    --color-accent-bg: #3a2a1b;
+    --color-chat-user: #3a2a1b;
+    --color-chat-assistant: #23272b;
+    --color-chat-error: #2d1a1a;
+  }
+  html:not(.light):not(.dark), body:not(.light):not(.dark) {
+    background: var(--color-bg);
+    color: var(--color-text);
+  }
+}
+
+/* Disabled button styling for dark mode */
+body.dark button:disabled, html.dark button:disabled,
+body.dark .ms-Button--disabled, html.dark .ms-Button--disabled {
+  background: #23272b !important;
+  color: #555 !important;
+  border-color: #333a41 !important;
+  opacity: 0.5;
+}
+
+/* Chat input left buttons (assuming a class or selector, adjust as needed) */
+body.dark .chat-input-left button:disabled,
+html.dark .chat-input-left button:disabled {
+  background: #23272b !important;
+  color: #555 !important;
+  border-color: #333a41 !important;
+  opacity: 0.5;
+}
+
+/* ThemeToggle dark mode background */
+body.dark .themeToggle,
+html.dark .themeToggle {
+  background: #23272b !important;
+  color: #f3f3f3 !important;
+  border: 1px solid #333a41 !important;
+}
+
+/* ThemeToggle light mode background */
+body.light .themeToggle,
+html.light .themeToggle {
+  background: #f2f2f2 !important;
+  color: #242424 !important;
+  border: 1px solid #d1d1d1 !important;
+}
+
+/* Update accent button backgrounds */
+.clearChatBroom,
+.clearChatBroomNoCosmos,
+.newChatIcon {
+  background: var(--color-accent) !important;
+  color: #fff !important;
+  border: none !important;
+  transition: background 0.2s;
+}
+.clearChatBroom:hover,
+.clearChatBroomNoCosmos:hover,
+.newChatIcon:hover {
+  background: var(--color-accent-dark) !important;
+}
+body.dark .clearChatBroom,
+body.dark .clearChatBroomNoCosmos,
+body.dark .newChatIcon {
+  background: var(--color-accent) !important;
+  color: #fff !important;
+  border: none !important;
+}
+body.dark .clearChatBroom:hover,
+body.dark .clearChatBroomNoCosmos:hover,
+body.dark .newChatIcon:hover {
+  background: var(--color-accent-dark) !important;
 }

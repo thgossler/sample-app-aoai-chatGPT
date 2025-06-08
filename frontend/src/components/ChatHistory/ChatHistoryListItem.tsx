@@ -17,6 +17,7 @@ import {
   TextField
 } from '@fluentui/react'
 import { useBoolean } from '@fluentui/react-hooks'
+import { useTheme } from '@fluentui/react'
 
 import { historyDelete, historyList, historyRename } from '../../api'
 import { Conversation } from '../../api/models'
@@ -75,6 +76,29 @@ export const ChatHistoryListItemCell: React.FC<ChatHistoryListItemCellProps> = (
     isBlocking: true,
     styles: { main: { maxWidth: 450 } }
   }
+
+  // Determine dark mode by checking the class on the html or body element
+  const [isDarkMode, setIsDarkMode] = useState(() =>
+    typeof document !== 'undefined' && (document.documentElement.classList.contains('dark') || document.body.classList.contains('dark'))
+  );
+
+  useEffect(() => {
+    const updateMode = () => {
+      setIsDarkMode(
+        document.documentElement.classList.contains('dark') || document.body.classList.contains('dark')
+      );
+    };
+    // Listen for class changes on html and body
+    const observer = new MutationObserver(updateMode);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    // Also listen for manual theme toggles
+    window.addEventListener('themechange', updateMode);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('themechange', updateMode);
+    };
+  }, []);
 
   if (!item) {
     return null
@@ -188,7 +212,7 @@ export const ChatHistoryListItemCell: React.FC<ChatHistoryListItemCellProps> = (
       onMouseLeave={() => setIsHovered(false)}
       styles={{
         root: {
-          backgroundColor: isSelected ? '#e6e6e6' : 'transparent'
+          backgroundColor: isSelected ? (isDarkMode ? '#2c3138' : '#e6e6e6') : 'transparent'
         }
       }}>
       {edit ? (
