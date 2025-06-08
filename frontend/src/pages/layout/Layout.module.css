@@ -101,6 +101,37 @@
   color: #242424;
 }
 
+.footer {
+  background: transparent;
+  color: var(--color-text);
+  padding: 16px 0 8px 0;
+  font-size: 14px;
+  text-align: center;
+  width: 100%;
+}
+
+.footerText {
+  color: var(--color-text);
+  background: transparent;
+  font-size: 14px;
+  margin: 0 8px;
+  transition: color 0.2s;
+}
+
+.footerText a {
+  color: var(--color-text);
+  text-decoration: none;
+  transition: text-decoration 0.2s;
+}
+
+.footerText a:hover {
+  text-decoration: underline;
+}
+
+.footerText a:active {
+  color: var(--color-text);
+}
+
 @media (max-width: 480px) {
   .headerTitleContainer {
     margin-left: 4px;

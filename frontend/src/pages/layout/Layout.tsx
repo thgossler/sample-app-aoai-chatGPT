@@ -2,6 +2,8 @@ import { useContext, useEffect, useState } from 'react'
 import { Link, Outlet } from 'react-router-dom'
 import { Dialog, Stack, TextField } from '@fluentui/react'
 import { CopyRegular } from '@fluentui/react-icons'
+import { sanitizeHtml } from '../../utils/sanitizeHtml'
+import { fillPlaceholders } from '../../utils/placeholders'
 
 import { CosmosDBStatus } from '../../api'
 import Contoso from '../../assets/Contoso.svg'
@@ -97,6 +99,13 @@ const Layout = () => {
         </Stack>
       </header>
       <Outlet />
+      <footer className={styles.footer}>
+        <Stack horizontal verticalAlign="center" horizontalAlign="space-between">
+          <span className={styles.footerText} dangerouslySetInnerHTML={{ __html: fillPlaceholders(sanitizeHtml(ui?.footer_html_left || '<a href="https://github.com/thgossler/sample-app-aoai-chatGPT" target="_blank" rel="noopener noreferrer">GitHub</a>')) }} />
+          <span className={styles.footerText} dangerouslySetInnerHTML={{ __html: fillPlaceholders(sanitizeHtml(ui?.footer_html_middle || '')) }} />
+          <span className={styles.footerText} dangerouslySetInnerHTML={{ __html: fillPlaceholders(sanitizeHtml(ui?.footer_html_right || 'MIT License')) }} />
+        </Stack>
+      </footer>
       <Dialog
         onDismiss={handleSharePanelDismiss}
         hidden={!isSharePanelOpen}

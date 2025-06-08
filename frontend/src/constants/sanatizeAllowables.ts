@@ -45,4 +45,8 @@ export const XSSAllowTags = [
   'br'
 ]
 
-export const XSSAllowAttributes = ['href']
+export const XSSAllowAttributes = [
+  'href',
+  'target',
+  'rel'
+]
