@@ -27,7 +27,7 @@
   border-radius: 8px;
   color: var(--color-text);
   overflow-y: auto;
-  max-height: calc(100vh - 100px);
+  max-height: calc(100vh - 140px);
   margin-top: 20px;
 }
 
@@ -359,6 +359,7 @@
 a {
   padding-left: 5px;
   padding-right: 5px;
+  color: var(--color-accent)
 }
 
 .viewSourceButton {
@@ -393,6 +394,49 @@ a {
 
 .citationContainer, .citation, .clickableSup {
   cursor: pointer;
+}
+
+a:hover {
+  color: #e0a95b;
+  text-decoration: underline;
+}
+
+/* Custom scrollbar styles for dark mode */
+::-webkit-scrollbar {
+  width: 4px;
+  background: var(--color-bg-secondary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-accent);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #e0a95b;
+}
+::-webkit-scrollbar-corner {
+  background: var(--color-bg-secondary);
+}
+:global(.chatContainer)::-webkit-scrollbar {
+  width: 4px;
+  background: var(--color-bg-secondary);
+}
+:global(.chatContainer)::-webkit-scrollbar-thumb {
+  background: var(--color-accent);
+  border-radius: 4px;
+}
+:global(.chatContainer)::-webkit-scrollbar-thumb:hover {
+  background: #e0a95b;
+}
+:global(.chatContainer)::-webkit-scrollbar-corner {
+  background: var(--color-bg-secondary);
+}
+::-webkit-scrollbar {
+  scrollbar-color: var(--color-accent) var(--color-bg-secondary);
+  scrollbar-width: thin;
+}
+.chatContainer::-webkit-scrollbar {
+  scrollbar-color: var(--color-accent) var(--color-bg-secondary);
+  scrollbar-width: thin;
 }
 
 :root {
