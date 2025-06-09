@@ -1,4 +1,4 @@
-FROM node:20-alpine AS frontend  
+FROM node:24-alpine AS frontend
 RUN mkdir -p /home/node/app/node_modules && chown -R node:node /home/node/app
 
 WORKDIR /home/node/app 
@@ -10,7 +10,7 @@ COPY --chown=node:node ./static/ ./static
 WORKDIR /home/node/app/frontend
 RUN NODE_OPTIONS=--max_old_space_size=8192 npm run build
   
-FROM python:3.11-alpine 
+FROM python:3.12-alpine 
 RUN apk add --no-cache --virtual .build-deps \  
     build-base \  
     libffi-dev \  

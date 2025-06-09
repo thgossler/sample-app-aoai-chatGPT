@@ -1,0 +1,15 @@
+-r requirements.in
+azure-ai-documentintelligence
+Markdown
+tqdm
+tiktoken
+langchain
+bs4
+urllib3
+pytest
+pytest-asyncio
+PyMuPDF
+azure-storage-blob
+chardet
+azure-keyvault-secrets
+coverage

@@ -1,0 +1,14 @@
+azure-identity
+Flask[async]
+openai
+azure-search-documents
+azure-storage-blob
+python-dotenv
+azure-cosmos
+quart
+uvicorn
+aiohttp
+gunicorn
+pydantic-settings
+fastmcp
+requests
