@@ -77,6 +77,13 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
       var sourceTitleMatch = citation.content.match(/source_title\s*[:]\s*(.*)/);
       var sourceTitle = sourceTitleMatch ? sourceTitleMatch[1] : null;
 
+      if (sourceUrl && sourceUrl.includes('#')) {
+        const headingMatch = citation.content.match(/^(#{1,6})\s+(.*)$/m);
+        if (headingMatch) {
+          sourceTitle += ` - ${headingMatch[2]}`;
+        }
+      }
+
       var sourceFileMatch = citation.content.match(/source_file\s*[:]\s*(.*)/);
       var sourceFile = sourceFileMatch ? sourceFileMatch[1] : null;
 

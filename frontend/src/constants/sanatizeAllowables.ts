@@ -48,5 +48,6 @@ export const XSSAllowTags = [
 export const XSSAllowAttributes = [
   'href',
   'target',
-  'rel'
+  'rel',
+  'alt'
 ]
