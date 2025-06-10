@@ -11,8 +11,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/ask': 'http://localhost:5000',
-      '/chat': 'http://localhost:5000'
+      '^/(conversation|frontend_settings|history|citationConfig|storageSas)': 'http://localhost:8081'
     }
   }
 })

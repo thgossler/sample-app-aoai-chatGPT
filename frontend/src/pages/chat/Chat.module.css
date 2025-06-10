@@ -67,6 +67,7 @@
 .chatIcon {
   height: 62px;
   width: auto;
+  margin-top: 10px;
 }
 
 .chatMessageStream {
@@ -449,6 +450,10 @@ body.light .chatMessageUserMessage {
 }
 
 @media (max-width: 480px) {
+  .chatContainer {
+    max-height: calc(100vh - 235px);
+  }
+
   .chatInput {
     width: 90%;
     max-width: 90%;
@@ -472,5 +477,11 @@ body.light .chatMessageUserMessage {
 
   .citationPanel {
     max-width: 100%;
+  }
+}
+
+@media (max-height: 480px) {
+  .chatContainer {
+    max-height: calc(100vh - 185px);
   }
 }

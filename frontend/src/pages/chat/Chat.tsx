@@ -996,7 +996,8 @@ const Chat = () => {
                   hidden={hideErrorDialog}
                   onDismiss={handleErrorDialogClose}
                   dialogContentProps={errorDialogContentProps}
-                  modalProps={modalProps}></Dialog>
+                  modalProps={modalProps}>
+                </Dialog>
               </Stack>
               <QuestionInput
                 clearOnSend
