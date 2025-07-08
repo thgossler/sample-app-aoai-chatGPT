@@ -748,7 +748,7 @@ const Chat = () => {
         if (citationConfig.FileStorageBaseUrl != null && citationConfig.FileStorageBaseUrl.length > 0 &&
           citationConfig.FileLinkBaseUrl != null && citationConfig.FileLinkBaseUrl.length > 0) {
           let citationUrlLowercase = citation.url?.toLowerCase() ?? '';
-          if (citationUrlLowercase.endsWith('.md') || citationUrlLowercase.includes('.md#') || citationUrlLowercase.includes('.md?')) {
+          if (citationUrlLowercase.includes('_wiki') || citationUrlLowercase.endsWith('.md') || citationUrlLowercase.includes('.md#') || citationUrlLowercase.includes('.md?')) {
             var hostUrl = new URL(citationConfig.FileStorageBaseUrl);
             var hostPart = hostUrl.protocol + '//' + hostUrl.host;
             var blobContainerPart = hostPart + '/';
