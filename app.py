@@ -262,6 +262,19 @@ async def call_mcp_tool(tool_name: str, tool_args: dict) -> str:
         logging.error(f"Error calling MCP tool {tool_name}: {e}")
         return f"Error: {str(e)}"
 
+def is_reasoning_model(model_name: str) -> bool:
+    """Return True if the model is a reasoning AI model (o1, o3, o4, gpt-5, etc)."""
+    if not model_name:
+        return False
+    model_name = model_name.lower()
+    reasoning_prefixes = [
+        "o1", "o3", "o4", "gpt-5"
+    ]
+    for prefix in reasoning_prefixes:
+        if model_name.startswith(prefix):
+            return True
+    return False
+
 def prepare_model_args(request_body, request_headers):
     """Prepare model arguments for OpenAI API call"""
     request_messages = request_body.get("messages", [])
@@ -309,13 +322,16 @@ def prepare_model_args(request_body, request_headers):
     model_args = {
         "messages": messages,
         "temperature": app_settings.azure_openai.temperature,
-        "max_tokens": app_settings.azure_openai.max_tokens,
         "top_p": app_settings.azure_openai.top_p,
         "stop": app_settings.azure_openai.stop_sequence,
         "stream": app_settings.azure_openai.stream,
         "model": app_settings.azure_openai.model,
         "user": user_json
     }
+    if is_reasoning_model(app_settings.azure_openai.model):
+        model_args["max_completion_tokens"] = app_settings.azure_openai.max_tokens
+    else:
+        model_args["max_tokens"] = app_settings.azure_openai.max_tokens
 
     if len(messages) > 0:
         if messages[-1]["role"] == "user":
@@ -1083,10 +1099,18 @@ async def generate_title(conversation_messages) -> str:
 
     try:
         azure_openai_client = await init_openai_client()
-        response = await azure_openai_client.chat.completions.create(
-            model=app_settings.azure_openai.model, messages=messages, temperature=1, max_tokens=64
-        )
-
+        model_name = app_settings.azure_openai.model
+        model_args = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": 1
+        }
+        max_tokens = 64
+        if is_reasoning_model(model_name):
+            model_args["max_completion_tokens"] = max_tokens
+        else:
+            model_args["max_tokens"] = max_tokens
+        response = await azure_openai_client.chat.completions.create(**model_args)
         title = response.choices[0].message.content
         return title
     except Exception as e:
