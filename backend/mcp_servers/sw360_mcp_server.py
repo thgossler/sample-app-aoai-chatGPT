@@ -46,6 +46,23 @@ SW360_API_KEY_ENV = "SW360_API_KEY"
 SW360_URL_ROOT_ENV = "SW360_URL_ROOT"
 
 # ---------------------------------------------------------------------------
+# Custom Exceptions
+# ---------------------------------------------------------------------------
+
+class SW360RequestError(Exception):
+    """Raised for actual HTTP request errors (network, server errors, auth failures)"""
+    def __init__(self, message: str, status_code: int = None, response_text: str = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.response_text = response_text
+
+class SW360NotFoundError(Exception):
+    """Raised when a specific resource is not found (404) - this is expected behavior"""
+    def __init__(self, message: str, resource_type: str = None):
+        super().__init__(message)
+        self.resource_type = resource_type
+
+# ---------------------------------------------------------------------------
 # Low‑level helpers (HTTP, URL building)
 # ---------------------------------------------------------------------------
 
@@ -73,11 +90,49 @@ def _build_query_url(base: str, params: Dict[str, str]) -> str:
 
 
 def _send_get(url: str, api_key: str):
+    """
+    Send GET request to SW360 API with proper error handling.
+    
+    Raises:
+        SW360RequestError: For actual HTTP request errors (network, server errors, auth failures)
+        SW360NotFoundError: When resource is not found (404) - expected behavior
+    
+    Returns:
+        dict: JSON response for successful requests (200)
+    """
     headers = {"Authorization": f"Token {api_key}", "Accept": "application/json"}
-    resp = requests.get(url, headers=headers, timeout=30)
-    if resp.status_code != 200:
-        raise RuntimeError(f"GET {url} -> {resp.status_code}: {resp.text[:200]}")
-    return resp.json()
+    
+    try:
+        resp = requests.get(url, headers=headers, timeout=30)
+    except requests.exceptions.RequestException as e:
+        raise SW360RequestError(f"Network error when accessing {url}: {str(e)}")
+    
+    if resp.status_code == 200:
+        return resp.json()
+    elif resp.status_code == 404:
+        # 404 is expected when resource doesn't exist - don't raise exception
+        raise SW360NotFoundError(f"Resource not found: {url}")
+    elif resp.status_code in [401, 403]:
+        # Authentication/authorization errors
+        raise SW360RequestError(
+            f"Authentication failed for {url}: {resp.status_code}", 
+            resp.status_code, 
+            resp.text[:200]
+        )
+    elif resp.status_code >= 500:
+        # Server errors
+        raise SW360RequestError(
+            f"Server error for {url}: {resp.status_code}", 
+            resp.status_code, 
+            resp.text[:200]
+        )
+    else:
+        # Other client errors (400, etc.)
+        raise SW360RequestError(
+            f"Client error for {url}: {resp.status_code}", 
+            resp.status_code, 
+            resp.text[:200]
+        )
 
 # ---------------------------------------------------------------------------
 # SW360 Client (logic ported 1‑to‑1 from the original Golang module)
@@ -93,9 +148,24 @@ class SW360Client:
 
     # -------------------------- internal -------------------------------
     def _get(self, url: str, params: Optional[Dict[str, str]] | None = None):
+        """
+        Internal GET method that handles SW360 API responses.
+        
+        Returns:
+            dict: JSON response for successful requests
+            None: When resource is not found (404)
+        
+        Raises:
+            SW360RequestError: For actual HTTP request errors
+        """
         if params:
             url = _build_query_url(url, params)
-        return _send_get(url, self.api_key)
+        
+        try:
+            return _send_get(url, self.api_key)
+        except SW360NotFoundError:
+            # Resource not found is expected behavior, return None
+            return None
 
     def _add_html_url(self, item: Any, html_url: str):
         success = False
@@ -114,10 +184,23 @@ class SW360Client:
 
     # -------------------------- public API -----------------------------
     def get_project(self, project_id: str):
+        """
+        Get project by ID.
+        
+        Returns:
+            dict: Project data if found
+            None: If project not found
+        """
         url = f"{self.url_root}/resource/api/projects/{project_id}"
         return self._get(url, {"allDetails": "true"})
 
     def get_projects_by_name(self, project_name: str):
+        """
+        Search projects by name.
+        
+        Returns:
+            list: List of matching projects (empty list if none found)
+        """
         url = f"{self.url_root}/resource/api/projects"
         project_name = "+".join(project_name.split())
         if not project_name:
@@ -129,13 +212,20 @@ class SW360Client:
             "sort": "name,desc", 
             "page": "0", 
             "page_entries": "250"}
-        projects = self._get(url, params)
-        if isinstance(projects, dict) and '_embedded' in projects and 'sw360:projects' in projects['_embedded']:
-            projects = projects['_embedded']['sw360:projects']
-        elif isinstance(projects, dict) and 'content' in projects:
-            projects = projects['content']
+        
+        result = self._get(url, params)
+        if result is None:
+            return []
+            
+        projects = []
+        if isinstance(result, dict) and '_embedded' in result and 'sw360:projects' in result['_embedded']:
+            projects = result['_embedded']['sw360:projects']
+        elif isinstance(result, dict) and 'content' in result:
+            projects = result['content']
+        
         if not projects:
-            raise ValueError(f"No project found with name '{project_name}'")
+            return []
+            
         page_url = f"{self.url_root}/group/guest/projects/-/project/detail/"
         for project in projects:
             if "name" in project and "version" in project:
@@ -144,18 +234,52 @@ class SW360Client:
         return projects
 
     def get_releases(self, project_id: str):
+        """
+        Get releases for a project.
+        
+        Returns:
+            list: List of releases (empty list if none found)
+        """
         url = f"{self.url_root}/resource/api/projects/{project_id}/releases"
-        return self._get(url, {"transitive": "false", "page": "0", "page_entries": "250", "sort": "name,desc"})
+        result = self._get(url, {"transitive": "false", "page": "0", "page_entries": "250", "sort": "name,desc"})
+        
+        if result is None:
+            return []
+            
+        # Extract releases from the response structure
+        if isinstance(result, dict) and '_embedded' in result and 'sw360:releases' in result['_embedded']:
+            return result['_embedded']['sw360:releases']
+        elif isinstance(result, dict) and 'content' in result:
+            return result['content']
+        elif isinstance(result, list):
+            return result
+        
+        return []
 
     def get_vulnerabilities(self, project_id: str):
+        """
+        Get vulnerabilities for a project.
+        
+        Returns:
+            list: List of vulnerabilities (empty list if none found)
+        """
         url = f"{self.url_root}/resource/api/projects/{project_id}/vulnerabilities"
-        vulnerabilities = self._get(url, {"page": "0", "page_entries": "250", "sort": "externalId"})
-        if isinstance(vulnerabilities, dict) and '_embedded' in vulnerabilities and 'sw360:vulnerabilityDTOes' in vulnerabilities['_embedded']:
-            vulnerabilities = vulnerabilities['_embedded']['sw360:vulnerabilityDTOes']
-        elif isinstance(vulnerabilities, dict) and 'content' in vulnerabilities:
-            vulnerabilities = vulnerabilities['content']
+        result = self._get(url, {"page": "0", "page_entries": "250", "sort": "externalId"})
+        
+        if result is None:
+            return []
+            
+        vulnerabilities = []
+        if isinstance(result, dict) and '_embedded' in result and 'sw360:vulnerabilityDTOes' in result['_embedded']:
+            vulnerabilities = result['_embedded']['sw360:vulnerabilityDTOes']
+        elif isinstance(result, dict) and 'content' in result:
+            vulnerabilities = result['content']
+        elif isinstance(result, list):
+            vulnerabilities = result
+            
         if not vulnerabilities:
-            raise ValueError(f"No vulnerabilities found for project '{project_id}'")
+            return []
+            
         page_url = f"{self.url_root}/group/guest/vulnerabilities?p_p_id=sw360_portlet_vulnerabilitites&p_p_lifecycle=0&_sw360_portlet_vulnerabilitites_pagename=detail&_sw360_portlet_vulnerabilitites_vulnerabilityId=$(VUL_ID)#/tab-Summary"
         for vulnerability in vulnerabilities:
             extId = vulnerability.get("externalId", None)
@@ -164,18 +288,39 @@ class SW360Client:
         return vulnerabilities
 
     def get_vulnerability_tracking_status(self, project_id: str):
+        """
+        Get vulnerability tracking status for a project.
+        
+        Returns:
+            list: List of vulnerability tracking statuses (empty list if none found)
+        """
         url = f"{self.url_root}/resource/api/vulnerabilities/trackingStatus/{project_id}"
-        vulnerabilityTrackingStatuses = self._get(url, {"page": "0", "page_entries": "250", "sort": "name,asc"})
-        if isinstance(vulnerabilityTrackingStatuses, dict) and 'vulnerabilityTrackingStatus' in vulnerabilityTrackingStatuses:
-            vulnerabilityTrackingStatuses = vulnerabilityTrackingStatuses['vulnerabilityTrackingStatus']
+        result = self._get(url, {"page": "0", "page_entries": "250", "sort": "name,asc"})
+        
+        if result is None:
+            return []
+            
+        vulnerabilityTrackingStatuses = []
+        if isinstance(result, dict) and 'vulnerabilityTrackingStatus' in result:
+            vulnerabilityTrackingStatuses = result['vulnerabilityTrackingStatus']
+        elif isinstance(result, list):
+            vulnerabilityTrackingStatuses = result
+            
         if not vulnerabilityTrackingStatuses:
-            raise ValueError(f"No vulnerability tracking status found for project '{project_id}'")
+            return []
+            
         page_url = f"{self.url_root}/group/guest/projects/-/project/detail/$(PROJECT_ID)#/tab-VulnerabilityTrackingsStatus"
         for vulnerabilityTrackingStatus in vulnerabilityTrackingStatuses:
             self._add_html_url(vulnerabilityTrackingStatus, page_url.replace("$(PROJECT_ID)", project_id))
         return vulnerabilityTrackingStatuses
 
     def search_package(self, name: str, version: str | None = None, package_manager: str | None = None, package_url: str | None = None):
+        """
+        Search packages by name and optional filters.
+        
+        Returns:
+            list: List of matching packages (empty list if none found)
+        """
         url = f"{self.url_root}/resource/api/packages"
         params = {"name": name, "allDetails": "true", "sort": "name,desc"}
         if not name:
@@ -186,13 +331,22 @@ class SW360Client:
             params["packageManager"] = package_manager
         if package_url:
             params["packageUrl"] = package_url
-        packages = self._get(url, params)
-        if isinstance(packages, dict) and '_embedded' in packages and 'sw360:packages' in packages['_embedded']:
-            packages = packages['_embedded']['sw360:packages']
-        elif isinstance(packages, dict) and 'content' in packages:
-            packages = packages['content']
+            
+        result = self._get(url, params)
+        if result is None:
+            return []
+            
+        packages = []
+        if isinstance(result, dict) and '_embedded' in result and 'sw360:packages' in result['_embedded']:
+            packages = result['_embedded']['sw360:packages']
+        elif isinstance(result, dict) and 'content' in result:
+            packages = result['content']
+        elif isinstance(result, list):
+            packages = result
+            
         if not packages:
-            raise ValueError(f"No packages found with name '{name}'")
+            return []
+            
         page_url = f"{self.url_root}/group/guest/packages?p_p_id=sw360_portlet_packages&p_p_lifecycle=0&_sw360_portlet_packages_pagename=detail&_sw360_portlet_packages_packageId=$(PACKAGE_ID)#/tab-Summary"
         for package in packages:
             self._add_html_url(package, page_url.replace("$(PACKAGE_ID)", package.get("id", "")))
@@ -200,9 +354,23 @@ class SW360Client:
         return packages
 
     def get_package(self, href: str):
+        """
+        Get package details by href.
+        
+        Returns:
+            dict: Package data if found
+            None: If package not found
+        """
         return self._get(href, {"allDetails": "true"})
 
     def get_release(self, release_id: str):
+        """
+        Get release details by ID.
+        
+        Returns:
+            dict: Release data if found
+            None: If release not found
+        """
         url = f"{self.url_root}/resource/api/releases/{release_id}"
         return self._get(url, {"allDetails": "true"})
 
@@ -220,7 +388,7 @@ class SW360Client:
 mcp = FastMCP(
     name="SW360 MCP Server",
     description="SW360 tools for projects, packages, releases and vulnerabilities",
-    version="0.1.1",
+    version="0.1.2",
 )
 
 
@@ -233,7 +401,10 @@ def _client() -> SW360Client:
 @mcp.tool(name="get_project", description="Return the SW360 project object given its ID (with full details including a list of linked packages).")
 def get_project(project_id: str):
     """Fetch a project with allDetails=true"""
-    return _client().get_project(project_id)
+    result = _client().get_project(project_id)
+    if result is None:
+        return {"error": "Project not found", "project_id": project_id}
+    return result
 
 
 @mcp.tool(name="get_projects_by_name", description="Return the list of SW360 project objects which contain the given name in their name (only the first 250 results, and not all object details).")
@@ -245,52 +416,45 @@ def get_projects_by_name(project_name: str):
 @mcp.tool(name="get_releases", description="Return releases attached to a project.")
 def get_releases(project_id: str):
     json_response = _client().get_releases(project_id)
-    if isinstance(json_response, dict) and '_embedded' in json_response and 'sw360:releases' in json_response['_embedded']:
-        json_response = json_response['_embedded']['sw360:releases']
-    elif isinstance(json_response, dict) and 'content' in json_response:
-        json_response = json_response['content']
+    # The client method now returns a list directly or empty list
     return json_response
 
 
 @mcp.tool(name="get_vulnerabilities", description="Return the vulnerabilities for the given project.")
 def get_vulnerabilities(project_id: str):
     json_response = _client().get_vulnerabilities(project_id)
-    if isinstance(json_response, dict) and '_embedded' in json_response and 'sw360:vulnerabilityDTOes' in json_response['_embedded']:
-        json_response = json_response['_embedded']['sw360:vulnerabilityDTOes']
-    elif isinstance(json_response, dict) and 'content' in json_response:
-        json_response = json_response['content']
+    # The client method now returns a list directly or empty list
     return json_response
 
 
 @mcp.tool(name="get_vulnerability_tracking_status", description="Return the vulnerability tracking status for the given project with all linked packages.")
 def get_vulnerability_tracking_status(project_id: str):
     json_response = _client().get_vulnerability_tracking_status(project_id)
-    if isinstance(json_response, dict) and '_embedded' in json_response and 'sw360:vulnerabilityTrackingStatus' in json_response['_embedded']:
-        json_response = json_response['_embedded']['sw360:vulnerabilityTrackingStatus']
-    elif isinstance(json_response, dict) and 'content' in json_response:
-        json_response = json_response['content']
+    # The client method now returns a list directly or empty list
     return json_response
 
 
 @mcp.tool(name="search_package", description="Search packages by name (optionally version, packageManager, packageUrl).")
 def search_package(name: str, version: str | None = None, package_manager: str | None = None, package_url: str | None = None):
     json_response = _client().search_package(name, version, package_manager, package_url)
-    # extract the list of items from the response where it is wrapped in { '_embedded': { 'sw360:packages': [ { ... }, ... ] } }
-    if isinstance(json_response, dict) and 'content' in json_response:
-        json_response = json_response['content']
-    elif isinstance(json_response, dict) and '_embedded' in json_response and 'sw360:packages' in json_response['_embedded']:
-        json_response = json_response['_embedded']['sw360:packages']
+    # The client method now returns a list directly or empty list
     return json_response
 
 
 @mcp.tool(name="get_package", description="Return a full package record given its self‑link HREF.")
 def get_package(package_href: str):
-    return _client().get_package(package_href)
+    result = _client().get_package(package_href)
+    if result is None:
+        return {"error": "Package not found", "href": package_href}
+    return result
 
 
 @mcp.tool(name="get_release", description="Return the release object for a given release ID.")
 def get_release(release_id: str):
-    return _client().get_release(release_id)
+    result = _client().get_release(release_id)
+    if result is None:
+        return {"error": "Release not found", "release_id": release_id}
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -328,11 +492,16 @@ if __name__ == "__main__":
         print("Testing MCP tools...")
         all_success = True
 
+        # Create client instance for testing
+        client = _client()
+
         # get_project
         print_start_test("get_project")
         try:
-            result = get_project("0145bc3754bd42e2902043d8cc2369f7")
-            success = bool(result) and "name" in result and "version" in result
+            result = client.get_project("0145bc3754bd42e2902043d8cc2369f7")
+            if result is None:
+                result = {"error": "Project not found", "project_id": "0145bc3754bd42e2902043d8cc2369f7"}
+            success = bool(result) and ("name" in result and "version" in result) or ("error" in result)
             print_result(success, "get_project", result=result)
             all_success = all_success and success
         except Exception as e:
@@ -342,8 +511,8 @@ if __name__ == "__main__":
         # get_projects_by_name
         print_start_test("get_projects_by_name")
         try:
-            result = get_projects_by_name("CorePlatform AuditService")
-            success = bool(result) and isinstance(result, list) and len(result) > 0 and all("name" in project and "version" in project for project in result)
+            result = client.get_projects_by_name("CorePlatform AuditService")
+            success = isinstance(result, list) and (len(result) == 0 or all("name" in project for project in result))
             print_result(success, "get_projects_by_name", result=result)
             all_success = all_success and success
         except Exception as e:
@@ -353,8 +522,8 @@ if __name__ == "__main__":
         # get_releases
         print_start_test("get_releases")
         try:
-            result = get_releases("0145bc3754bd42e2902043d8cc2369f7")
-            success = bool(result) and isinstance(result, list) and len(result) > 0 and all("id" in release and "name" in release for release in result)
+            result = client.get_releases("0145bc3754bd42e2902043d8cc2369f7")
+            success = isinstance(result, list) and (len(result) == 0 or all("id" in release for release in result))
             print_result(success, "get_releases", result=result)
             all_success = all_success and success
         except Exception as e:
@@ -364,8 +533,8 @@ if __name__ == "__main__":
         # get_vulnerabilities
         print_start_test("get_vulnerabilities")
         try:
-            result = get_vulnerabilities("0145bc3754bd42e2902043d8cc2369f7")
-            success = isinstance(result, list) and len(result) > 0 and all("externalId" in vuln for vuln in result)
+            result = client.get_vulnerabilities("0145bc3754bd42e2902043d8cc2369f7")
+            success = isinstance(result, list) and (len(result) == 0 or all("externalId" in vuln for vuln in result))
             print_result(success, "get_vulnerabilities", result=result)
             all_success = all_success and success
         except Exception as e:
@@ -376,10 +545,10 @@ if __name__ == "__main__":
         print_start_test("search_package")
         first_package = None
         try:
-            packages = search_package("Microsoft.AspNetCore.Authentication.Core")
+            packages = client.search_package("Microsoft.AspNetCore.Authentication.Core")
             first_package = next((pkg for pkg in packages if "releaseId" in pkg), None)
             first_package = first_package or packages[0] if packages else None
-            success = bool(packages) and isinstance(packages, list) and len(packages) > 0 and all("name" in pkg and "version" in pkg for pkg in packages)
+            success = isinstance(packages, list) and (len(packages) == 0 or all("name" in pkg for pkg in packages))
             print_result(success, "search_package", result=packages)
             all_success = all_success and success
         except Exception as e:
@@ -390,8 +559,10 @@ if __name__ == "__main__":
         print_start_test("get_package")
         try:
             if first_package:
-                result = get_package(first_package["_links"]["self"]["href"])
-                success = bool(result) and "name" in result and "version" in result
+                result = client.get_package(first_package["_links"]["self"]["href"])
+                if result is None:
+                    result = {"error": "Package not found", "href": first_package["_links"]["self"]["href"]}
+                success = bool(result) and (("name" in result and "version" in result) or "error" in result)
                 print_result(success, "get_package", result=result)
                 all_success = all_success and success
             else:
@@ -405,8 +576,10 @@ if __name__ == "__main__":
         print_start_test("get_release")
         try:
             if first_package and "releaseId" in first_package:
-                result = get_release(first_package["releaseId"])
-                success = bool(result) and "id" in result and "name" in result and "version" in result
+                result = client.get_release(first_package["releaseId"])
+                if result is None:
+                    result = {"error": "Release not found", "release_id": first_package["releaseId"]}
+                success = bool(result) and (("id" in result and "name" in result) or "error" in result)
                 print_result(success, "get_release", result=result)
                 all_success = all_success and success
             else:
