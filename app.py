@@ -42,6 +42,7 @@ from backend.utils import (
 )
 from fastmcp import Client
 from backend.mcp_manager import MCPServerManager
+from backend.rag_service import init_rag_service, get_rag_service
 
 bp = Blueprint("routes", __name__, static_folder="static", template_folder="static")
 
@@ -67,6 +68,12 @@ def create_app():
             await init_mcp_servers()
         except Exception as e:
             logging.warning(f"MCP server initialization failed (optional): {e}")
+        
+        # Initialize RAG service (non-blocking)
+        try:
+            await init_rag_service(app_settings)
+        except Exception as e:
+            logging.warning(f"RAG service initialization failed (optional): {e}")
     
     return app
 
@@ -328,8 +335,14 @@ def prepare_model_args(request_body, request_headers):
         "model": app_settings.azure_openai.model,
         "user": user_json
     }
-    if is_reasoning_model(app_settings.azure_openai.model):
+    
+    # Check if this is a reasoning model
+    use_reasoning_model = is_reasoning_model(app_settings.azure_openai.model)
+    
+    if use_reasoning_model:
         model_args["max_completion_tokens"] = app_settings.azure_openai.max_tokens
+        # GPT-5 and newer reasoning models should support most parameters
+        logging.info(f"Using reasoning model: {app_settings.azure_openai.model}")
     else:
         model_args["max_tokens"] = app_settings.azure_openai.max_tokens
 
@@ -339,7 +352,13 @@ def prepare_model_args(request_body, request_headers):
             if len(tools) > 0:
                 model_args["tools"] = tools
 
-            if app_settings.datasource:
+            # For reasoning models, use manual RAG instead of OYD
+            if use_reasoning_model and app_settings.datasource:
+                # Manual RAG will be handled in send_chat_request_with_rag
+                # Don't add extra_body for reasoning models
+                pass
+            elif app_settings.datasource:
+                # Use OYD for non-reasoning models
                 model_args["extra_body"] = {
                     "data_sources": [
                         app_settings.datasource.construct_payload_configuration(
@@ -488,6 +507,20 @@ async def send_chat_request(request_body, request_headers):
     try:
         # Initialize OpenAI client and MCP tools BEFORE preparing model args
         azure_openai_client = await init_openai_client()
+        
+        # Check if we need to use manual RAG for reasoning models
+        use_reasoning_model = is_reasoning_model(app_settings.azure_openai.model)
+        logging.info(f"Using model: {app_settings.azure_openai.model}, is_reasoning_model: {use_reasoning_model}")
+        logging.info(f"Datasource available: {bool(app_settings.datasource)}")
+        
+        if use_reasoning_model and app_settings.datasource:
+            logging.info("Using manual RAG for reasoning model")
+            return await send_chat_request_with_rag(request_body, request_headers, azure_openai_client)
+        elif use_reasoning_model:
+            logging.info("Reasoning model detected but no datasource - using regular processing")
+        else:
+            logging.info("Not a reasoning model - using regular processing")
+        
         # Now prepare model args with tools available
         model_args = prepare_model_args(request_body, request_headers)
         
@@ -499,6 +532,128 @@ async def send_chat_request(request_body, request_headers):
         raise e
 
     return response, apim_request_id
+
+
+async def send_chat_request_with_rag(request_body, request_headers, azure_openai_client):
+    """Handle chat requests for reasoning models with manual RAG."""
+    try:
+        # Get the last user message for RAG query
+        messages = request_body.get("messages", [])
+        user_query = None
+        for message in reversed(messages):
+            if message.get("role") == "user":
+                user_query = message.get("content", "")
+                break
+        
+        if not user_query:
+            logging.warning("No user query found for RAG - using fallback")
+            # Fallback to normal processing without RAG
+            model_args = prepare_model_args(request_body, request_headers)
+            raw_response = await azure_openai_client.chat.completions.with_raw_response.create(**model_args)
+            apim_request_id = raw_response.headers.get("apim-request-id")
+            response = raw_response.parse()  # This works for both streaming and non-streaming
+            return response, apim_request_id
+        
+        # Retrieve relevant context using RAG service
+        rag_service = await get_rag_service()
+        if not rag_service:
+            logging.error("RAG service not available, falling back to normal processing")
+            model_args = prepare_model_args(request_body, request_headers)
+            raw_response = await azure_openai_client.chat.completions.with_raw_response.create(**model_args)
+            apim_request_id = raw_response.headers.get("apim-request-id")
+            response = raw_response.parse()  # This works for both streaming and non-streaming
+            apim_request_id = raw_response.headers.get("apim-request-id")
+            return response, apim_request_id
+        
+        context, citations = await rag_service.retrieve_context(user_query)
+        
+        # Prepare model args without OYD
+        model_args = prepare_model_args(request_body, request_headers)
+        
+        # For reasoning models with RAG, ensure adequate token limits
+        # Only increase if the current limit is too small for RAG context
+        if is_reasoning_model(app_settings.azure_openai.model):
+            current_max_tokens = model_args.get('max_completion_tokens', model_args.get('max_tokens', 0))
+            min_required_tokens = 8192  # Minimum needed for RAG + reasoning
+            
+            if current_max_tokens < min_required_tokens:
+                increased_tokens = max(min_required_tokens, 8192)
+                logging.debug(f"Increasing max_completion_tokens for reasoning model from {current_max_tokens} to {increased_tokens}")
+                
+                if "max_completion_tokens" in model_args:
+                    model_args["max_completion_tokens"] = increased_tokens
+                else:
+                    model_args["max_tokens"] = increased_tokens
+        
+        if context and citations:
+            # Inject context into the conversation
+            # Modify the last user message to include context
+            modified_messages = []
+            original_query = None
+            
+            for message in model_args["messages"]:
+                if message.get("role") == "user":
+                    # Store original query for potential context reduction
+                    original_query = message["content"]
+                    # This should be the last user message due to the loop structure
+                    enhanced_content = rag_service.format_context_for_prompt(context, message["content"])
+                    modified_messages.append({
+                        "role": "user",
+                        "content": enhanced_content
+                    })
+                else:
+                    modified_messages.append(message)
+            
+            model_args["messages"] = modified_messages
+            
+            # Estimate total prompt length for reasoning model compatibility
+            total_content_length = sum(len(str(msg.get('content', ''))) for msg in model_args['messages'])
+            
+            # Check if the prompt might be too long for reasoning models
+            if total_content_length > 50000:  # Rough estimate for potential issues
+                logging.warning(f"Large prompt detected ({total_content_length} chars). This might cause issues with reasoning models. Ensure that the max tokens are configured correspondingly high.")
+        
+        # Make the API call
+        
+        raw_response = await azure_openai_client.chat.completions.with_raw_response.create(**model_args)
+        apim_request_id = raw_response.headers.get("apim-request-id")
+        
+        # For streaming responses, don't parse the raw response - it would destroy the stream
+        if app_settings.azure_openai.stream:
+            logging.debug("Azure OpenAI API call initiated for streaming response")
+            response = raw_response.parse()  # This returns the stream object
+        else:
+            response = raw_response.parse()  # For non-streaming, this is safe
+            logging.debug(f"Azure OpenAI API call completed. Response has {len(response.choices) if response.choices else 0} choices")
+        
+        # Add citations to the response for streaming support
+        if citations:
+            if app_settings.azure_openai.stream:
+                # For streaming responses, attach citations to the response object
+                response._citations = citations
+            else:
+                # For non-streaming responses, check if we can access the message content
+                if hasattr(response, 'choices') and len(response.choices) > 0 and hasattr(response.choices[0].message, 'content'):
+                    # Create a context object similar to OYD format
+                    context_obj = {
+                        "citations": citations,
+                        "intent": user_query
+                    }
+                    
+                    # Inject context into the response
+                    # We'll handle this in the format_non_streaming_response function
+                    response._citations = citations
+        
+        return response, apim_request_id
+        
+    except Exception as e:
+        logging.exception("Exception in send_chat_request_with_rag")
+        # Fallback to normal processing
+        model_args = prepare_model_args(request_body, request_headers)
+        raw_response = await azure_openai_client.chat.completions.with_raw_response.create(**model_args)
+        response = raw_response.parse()
+        apim_request_id = raw_response.headers.get("apim-request-id")
+        return response, apim_request_id
 
 async def complete_chat_request(request_body, request_headers):
     if app_settings.base_settings.use_promptflow:
@@ -620,8 +775,122 @@ async def stream_chat_request(request_body, request_headers):
                         yield format_stream_response(functionCompletionChunk, history_metadata, apim_request_id)
                 
         else:
-            async for completionChunk in response:
-                yield format_stream_response(completionChunk, history_metadata, apim_request_id)
+            # Handle manual RAG citations injection for reasoning models
+            citations_injected = False
+            assistant_content_received = False
+            total_content_chunks = 0
+            
+            try:
+                # Check if response is actually a stream
+                if not hasattr(response, '__aiter__'):
+                    raise TypeError("Expected streaming response but got non-streaming response")
+                
+                chunk_count = 0
+                async for completionChunk in response:
+                    chunk_count += 1
+                    
+                    # Inject citations only on the first chunk (once per stream)
+                    if not citations_injected and hasattr(response, '_citations') and response._citations:
+                        context_obj = {
+                            "citations": response._citations,
+                            "intent": "Retrieved context for reasoning model"
+                        }
+                        
+                        # Create citation response in the same format as normal streaming responses
+                        citation_response = {
+                            "id": completionChunk.id,
+                            "model": completionChunk.model,
+                            "created": completionChunk.created,
+                            "object": completionChunk.object,
+                            "choices": [{"messages": [{"role": "tool", "content": json.dumps(context_obj)}]}],
+                            "history_metadata": history_metadata,
+                            "apim-request-id": apim_request_id,
+                        }
+                        yield citation_response
+                        citations_injected = True
+                    
+                    # Debug: Log chunk structure
+                    if completionChunk.choices and len(completionChunk.choices) > 0:
+                        choice = completionChunk.choices[0]
+                        if hasattr(choice, 'delta') and choice.delta:
+                            delta = choice.delta
+                    
+                    if completionChunk.choices and len(completionChunk.choices) > 0:
+                        delta = completionChunk.choices[0].delta
+                        choice = completionChunk.choices[0]
+                        
+                        if delta:
+                            if hasattr(delta, 'content') and delta.content is not None:
+                                assistant_content_received = True
+                                total_content_chunks += 1
+                    
+                    # Process and yield each streaming chunk
+                    formatted_response = format_stream_response(completionChunk, history_metadata, apim_request_id)
+                    # Only yield non-empty responses to avoid sending empty objects
+                    if formatted_response and formatted_response.get("choices") and formatted_response["choices"][0].get("messages"):
+                        yield formatted_response
+                    
+                    # Check if stream ended unexpectedly (choice is defined above in the completionChunk.choices block)
+                    if completionChunk.choices and len(completionChunk.choices) > 0:
+                        choice = completionChunk.choices[0]
+                        if hasattr(choice, 'finish_reason') and choice.finish_reason:
+                            break  # Explicitly break to ensure we don't continue
+                    
+            except Exception as e:
+                logging.error(f"Exception during streaming: {str(e)}", exc_info=True)
+                # Don't re-raise here, let the fallback logic handle it
+            
+            if not assistant_content_received:
+                # For reasoning models, try a fallback without RAG enhancement
+                if is_reasoning_model(app_settings.azure_openai.model):
+                    logging.info("Attempting fallback without RAG enhancement for reasoning model")
+                    try:
+                        # Prepare original model args without RAG enhancement - force non-streaming
+                        fallback_model_args = prepare_model_args(request_body, request_headers)
+                        fallback_model_args["stream"] = False  # Force non-streaming for fallback
+                        
+                        azure_openai_client = await init_openai_client()
+                        fallback_raw_response = await azure_openai_client.chat.completions.with_raw_response.create(**fallback_model_args)
+                        fallback_response = fallback_raw_response.parse()
+                        
+                        logging.info("Fallback response successful, converting to streaming format")
+                        
+                        # Convert the non-streaming response to streaming format
+                        if fallback_response.choices and len(fallback_response.choices) > 0:
+                            # First inject citations if available
+                            if hasattr(response, '_citations') and response._citations:
+                                context_obj = {
+                                    "citations": response._citations,
+                                    "intent": "Retrieved context for reasoning model (fallback)"
+                                }
+                                
+                                citation_response = {
+                                    "id": fallback_response.id,
+                                    "model": fallback_response.model,
+                                    "created": fallback_response.created,
+                                    "object": "chat.completion.chunk",
+                                    "choices": [{"messages": [{"role": "tool", "content": json.dumps(context_obj)}]}],
+                                    "history_metadata": history_metadata,
+                                    "apim-request-id": apim_request_id,
+                                }
+                                yield citation_response
+                            
+                            # Then yield the assistant message content
+                            assistant_content = fallback_response.choices[0].message.content
+                            if assistant_content:
+                                assistant_response = {
+                                    "id": fallback_response.id,
+                                    "model": fallback_response.model,
+                                    "created": fallback_response.created,
+                                    "object": "chat.completion.chunk",
+                                    "choices": [{"messages": [{"role": "assistant", "content": assistant_content}]}],
+                                    "history_metadata": history_metadata,
+                                    "apim-request-id": apim_request_id,
+                                }
+                                yield assistant_response
+                            
+                    except Exception as fallback_error:
+                        logging.error(f"Fallback also failed: {fallback_error}")
 
     return generate(apim_request_id=apim_request_id, history_metadata=history_metadata)
 
@@ -739,12 +1008,12 @@ async def update_conversation():
         ## then write it to the conversation history in cosmos
         messages = request_json["messages"]
         if len(messages) > 0 and messages[-1]["role"] == "assistant":
-            if len(messages) > 1 and messages[-2].get("role", None) == "tool":
+            if len(messages) > 1 and messages[-2].get("role", None) == "tool": 
                 # write the tool message first
                 await current_app.cosmos_conversation_client.create_message(
                     uuid=str(uuid.uuid4()),
                     conversation_id=conversation_id,
-                    user_id=user_id,
+                    user_id=user_id, 
                     input_message=messages[-2],
                 )
             # write the assistant message

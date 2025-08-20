@@ -160,7 +160,7 @@ const Chat = () => {
       assistantContent += resultMessage.content
       assistantMessage = { ...assistantMessage, ...resultMessage }
       assistantMessage.content = assistantContent
-
+      
       if (resultMessage.context) {
         toolMessage = {
           id: uuid(),
@@ -195,6 +195,11 @@ const Chat = () => {
   }
 
   const makeApiRequestWithoutCosmosDB = async (question: ChatMessage["content"], conversationId?: string) => {
+    // Reset streaming variables at the start of each request
+    assistantMessage = {} as ChatMessage
+    toolMessage = {} as ChatMessage
+    assistantContent = ''
+    
     setIsLoading(true)
     setShowLoadingMessage(true)
     const abortController = new AbortController()
@@ -252,26 +257,37 @@ const Chat = () => {
 
           var text = new TextDecoder('utf-8').decode(value)
           const objects = text.split('\n')
-          objects.forEach(obj => {
+          objects.forEach((obj, idx) => {
             try {
               if (obj !== '' && obj !== '{}') {
                 runningText += obj
-                result = JSON.parse(runningText)
-                if (result.choices?.length > 0) {
-                  result.choices[0].messages.forEach(msg => {
-                    msg.id = result.id
-                    msg.date = new Date().toISOString()
-                  })
-                  if (result.choices[0].messages?.some(m => m.role === ASSISTANT)) {
-                    setShowLoadingMessage(false)
+                try {
+                  result = JSON.parse(runningText)
+                  // Successfully parsed - process the result
+                  if (result.choices?.length > 0) {
+                    result.choices[0].messages.forEach(msg => {
+                      msg.id = result.id
+                      msg.date = new Date().toISOString()
+                    })
+                    
+                    result.choices[0].messages.forEach((msg, idx) => {
+                      const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+                    })
+                    
+                    if (result.choices[0].messages?.some(m => m.role === ASSISTANT)) {
+                      setShowLoadingMessage(false)
+                    }
+                    result.choices[0].messages.forEach(resultObj => {
+                      processResultMessage(resultObj, userMessage, conversationId)
+                    })
+                  } else if (result.error) {
+                    throw Error(result.error)
                   }
-                  result.choices[0].messages.forEach(resultObj => {
-                    processResultMessage(resultObj, userMessage, conversationId)
-                  })
-                } else if (result.error) {
-                  throw Error(result.error)
+                  runningText = '' // Reset after successful parsing
+                } catch (parseError) {
+                  // JSON parsing failed, continue accumulating
+                  // Don't reset runningText here - keep accumulating
                 }
-                runningText = ''
               }
             } catch (e) {
               if (!(e instanceof SyntaxError)) {
@@ -283,9 +299,29 @@ const Chat = () => {
             }
           })
         }
-        conversation.messages.push(toolMessage, assistantMessage)
+        
+        // Only add assistant message if it has content
+        const hasValidContent = assistantMessage.content && 
+          typeof assistantMessage.content === 'string' && 
+          assistantMessage.content.trim().length > 0
+        
+        if (hasValidContent) {
+          isEmpty(toolMessage)
+            ? conversation.messages.push(assistantMessage)
+            : conversation.messages.push(toolMessage, assistantMessage)
+        } else {
+          // If we have a tool message but no assistant content, still add the tool message
+          if (!isEmpty(toolMessage)) {
+            conversation.messages.push(toolMessage)
+          }
+        }
+        
         appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: conversation })
-        setMessages([...messages, toolMessage, assistantMessage])
+        setMessages(conversation.messages)
+        
+        // Set processing to Done AFTER we've updated the conversation state
+        // This ensures the useLayoutEffect validation happens after the assistant message is in state
+        setProcessMessages(messageStatus.Done)
       }
     } catch (e) {
       if (!abortController.signal.aborted) {
@@ -315,13 +351,21 @@ const Chat = () => {
       setIsLoading(false)
       setShowLoadingMessage(false)
       abortFuncs.current = abortFuncs.current.filter(a => a !== abortController)
-      setProcessMessages(messageStatus.Done)
+      // Only set to Done if we haven't already set it after successful conversation update
+      if (processMessages !== messageStatus.Done) {
+        setProcessMessages(messageStatus.Done)
+      }
     }
 
     return abortController.abort()
   }
 
   const makeApiRequestWithCosmosDB = async (question: ChatMessage["content"], conversationId?: string) => {
+    // Reset streaming variables at the start of each request
+    assistantMessage = {} as ChatMessage
+    toolMessage = {} as ChatMessage
+    assistantContent = ''
+    
     setIsLoading(true)
     setShowLoadingMessage(true)
     const abortController = new AbortController()
@@ -407,20 +451,33 @@ const Chat = () => {
 
           var text = new TextDecoder('utf-8').decode(value)
           const objects = text.split('\n')
-          objects.forEach(obj => {
+          objects.forEach((obj, idx) => {
             try {
               if (obj !== '' && obj !== '{}') {
                 runningText += obj
                 result = JSON.parse(runningText)
-                if (!result.choices?.[0]?.messages?.[0].content) {
+                
+                // Check if we have valid content - allow tool messages to pass through
+                const hasMessages = result.choices?.[0]?.messages?.length > 0
+                const firstMessage = result.choices?.[0]?.messages?.[0]
+                const isToolMessage = firstMessage?.role === 'tool'
+                const hasContent = firstMessage?.content
+                
+                if (!hasMessages || (!isToolMessage && !hasContent)) {
                   errorResponseMessage = NO_CONTENT_ERROR
                   throw Error()
                 }
+                
                 if (result.choices?.length > 0) {
                   result.choices[0].messages.forEach(msg => {
                     msg.id = result.id
                     msg.date = new Date().toISOString()
                   })
+                  
+                  result.choices[0].messages.forEach((msg, idx) => {
+                    const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+                  })
+                  
                   if (result.choices[0].messages?.some(m => m.role === ASSISTANT)) {
                     setShowLoadingMessage(false)
                   }
@@ -429,8 +486,6 @@ const Chat = () => {
                   })
                 }
                 runningText = ''
-              } else if (result.error) {
-                throw Error(result.error)
               }
             } catch (e) {
               if (!(e instanceof SyntaxError)) {
@@ -453,9 +508,22 @@ const Chat = () => {
             abortFuncs.current = abortFuncs.current.filter(a => a !== abortController)
             return
           }
-          isEmpty(toolMessage)
-            ? resultConversation.messages.push(assistantMessage)
-            : resultConversation.messages.push(toolMessage, assistantMessage)
+          
+          // Only add assistant message if it has content
+          const hasValidContent = assistantMessage.content && 
+            typeof assistantMessage.content === 'string' && 
+            assistantMessage.content.trim().length > 0
+          
+          if (hasValidContent) {
+            isEmpty(toolMessage)
+              ? resultConversation.messages.push(assistantMessage)
+              : resultConversation.messages.push(toolMessage, assistantMessage)
+          } else {
+            // If we have a tool message but no assistant content, still add the tool message
+            if (!isEmpty(toolMessage)) {
+              resultConversation.messages.push(toolMessage)
+            }
+          }
         } else {
           resultConversation = {
             id: result.history_metadata.conversation_id,
@@ -463,9 +531,22 @@ const Chat = () => {
             messages: [userMessage],
             date: result.history_metadata.date
           }
-          isEmpty(toolMessage)
-            ? resultConversation.messages.push(assistantMessage)
-            : resultConversation.messages.push(toolMessage, assistantMessage)
+          
+          // Only add assistant message if it has content
+          const hasValidContent = assistantMessage.content && 
+            typeof assistantMessage.content === 'string' && 
+            assistantMessage.content.trim().length > 0
+          
+          if (hasValidContent) {
+            isEmpty(toolMessage)
+              ? resultConversation.messages.push(assistantMessage)
+              : resultConversation.messages.push(toolMessage, assistantMessage)
+          } else {
+            // If we have a tool message but no assistant content, still add the tool message
+            if (!isEmpty(toolMessage)) {
+              resultConversation.messages.push(toolMessage)
+            }
+          }
         }
         if (!resultConversation) {
           setIsLoading(false)
@@ -474,9 +555,11 @@ const Chat = () => {
           return
         }
         appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: resultConversation })
-        isEmpty(toolMessage)
-          ? setMessages([...messages, assistantMessage])
-          : setMessages([...messages, toolMessage, assistantMessage])
+        setMessages(resultConversation.messages)
+        
+        // Set processing to Done AFTER we've updated the conversation state
+        // This ensures the useLayoutEffect validation happens after the assistant message is in state
+        setProcessMessages(messageStatus.Done)
       }
     } catch (e) {
       if (!abortController.signal.aborted) {
@@ -544,7 +627,10 @@ const Chat = () => {
       setIsLoading(false)
       setShowLoadingMessage(false)
       abortFuncs.current = abortFuncs.current.filter(a => a !== abortController)
-      setProcessMessages(messageStatus.Done)
+      // Only set to Done if we haven't already set it after successful conversation update
+      if (processMessages !== messageStatus.Done) {
+        setProcessMessages(messageStatus.Done)
+      }
     }
     return abortController.abort()
   }
@@ -665,10 +751,24 @@ const Chat = () => {
           console.error('Failure fetching current chat state.')
           return
         }
-        const noContentError = appStateContext.state.currentChat.messages.find(m => m.role === ERROR)
-
-        if (!noContentError) {
-          saveToDB(appStateContext.state.currentChat.messages, appStateContext.state.currentChat.id)
+        
+        // Check if we have a complete conversation with assistant message
+        const messages = appStateContext.state.currentChat.messages
+        const lastMessage = messages[messages.length - 1]
+        const hasCompleteAssistantMessage = lastMessage && lastMessage.role === ASSISTANT && lastMessage.content
+        
+        // Only save if we have a complete assistant message or if there's an error
+        const noContentError = messages.find(m => m.role === ERROR)
+        
+        if (!noContentError && hasCompleteAssistantMessage) {
+          // Additional check: ensure the assistant message has actual content
+          const assistantContent = typeof lastMessage.content === 'string' ? lastMessage.content.trim() : ''
+          if (assistantContent.length === 0) {
+            console.warn('Assistant message is empty, skipping database save')
+            return
+          }
+          
+          saveToDB(messages, appStateContext.state.currentChat.id)
             .then(res => {
               if (!res.ok) {
                 let errorMessage =
@@ -699,6 +799,8 @@ const Chat = () => {
               }
               return errRes
             })
+        } else if (!hasCompleteAssistantMessage && !noContentError) {
+          console.warn('No complete assistant message found, skipping database save. This may be a timing issue with streaming.')
         }
       } else {
       }
@@ -706,7 +808,7 @@ const Chat = () => {
       setMessages(appStateContext.state.currentChat.messages)
       setProcessMessages(messageStatus.NotRunning)
     }
-  }, [processMessages])
+  }, [processMessages, appStateContext?.state.currentChat?.messages])
 
   useEffect(() => {
     if (AUTH_ENABLED !== undefined) getUserInfoList();

@@ -89,7 +89,20 @@ def format_non_streaming_response(chatCompletion, history_metadata, apim_request
     if len(chatCompletion.choices) > 0:
         message = chatCompletion.choices[0].message
         if message:
-            if hasattr(message, "context"):
+            # Check for manual RAG citations (from reasoning models)
+            if hasattr(chatCompletion, '_citations') and chatCompletion._citations:
+                context_obj = {
+                    "citations": chatCompletion._citations,
+                    "intent": "Retrieved context for reasoning model"
+                }
+                response_obj["choices"][0]["messages"].append(
+                    {
+                        "role": "tool",
+                        "content": json.dumps(context_obj),
+                    }
+                )
+            elif hasattr(message, "context"):
+                # Original OYD context
                 response_obj["choices"][0]["messages"].append(
                     {
                         "role": "tool",
@@ -120,7 +133,24 @@ def format_stream_response(chatCompletionChunk, history_metadata, apim_request_i
     if len(chatCompletionChunk.choices) > 0:
         delta = chatCompletionChunk.choices[0].delta
         if delta:
-            if hasattr(delta, "context"):
+            # Debug: Log which condition is being evaluated
+            has_context = hasattr(delta, "context")
+            has_content = bool(getattr(delta, "content", None))
+            has_tool_calls = bool(getattr(delta, "tool_calls", None))
+            delta_role = getattr(delta, "role", None)
+            
+            # Check for content first (most common case for streaming)  
+            # Only create assistant messages for non-empty content to avoid frontend errors
+            if hasattr(delta, 'content') and delta.content is not None and delta.content != "":
+                # For reasoning models, delta.role might be None for continuation chunks
+                # Always treat content chunks as assistant messages
+                messageObj = {
+                    "role": "assistant", 
+                    "content": delta.content,
+                }
+                response_obj["choices"][0]["messages"].append(messageObj)
+                return response_obj
+            elif hasattr(delta, "context"):
                 messageObj = {"role": "tool", "content": json.dumps(delta.context)}
                 response_obj["choices"][0]["messages"].append(messageObj)
                 return response_obj
@@ -147,15 +177,11 @@ def format_stream_response(chatCompletionChunk, history_metadata, apim_request_i
                     messageObj["context"] = json.dumps(delta.context)
                 response_obj["choices"][0]["messages"].append(messageObj)
                 return response_obj
-            else:
-                if delta.content:
-                    messageObj = {
-                        "role": "assistant",
-                        "content": delta.content,
-                    }
-                    response_obj["choices"][0]["messages"].append(messageObj)
-                    return response_obj
 
+    # Extract delta for debugging if available
+    debug_delta = None
+    if chatCompletionChunk.choices and len(chatCompletionChunk.choices) > 0:
+        debug_delta = chatCompletionChunk.choices[0].delta if hasattr(chatCompletionChunk.choices[0], 'delta') else None
     return {}
 
 

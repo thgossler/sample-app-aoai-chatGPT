@@ -12,6 +12,12 @@ export const enumerateCitations = (citations: Citation[]) => {
   const filepathMap = new Map()
   for (const citation of citations) {
     const { filepath } = citation
+    if (!filepath) {
+      if (citation.part_index == 0) {
+        citation.part_index = 1
+      }
+      continue
+    }
     let part_i = 1
     if (filepathMap.has(filepath)) {
       part_i = filepathMap.get(filepath) + 1
@@ -25,14 +31,15 @@ export const enumerateCitations = (citations: Citation[]) => {
 export function parseAnswer(answer: AskResponse): ParsedAnswer {
   if (typeof answer.answer !== "string") return null
   let answerText = answer.answer
-  const citationLinks = answerText.match(/\[(doc\d\d?\d?)]/g)
-
-  const lengthDocN = '[doc'.length
-
+  let citationLinks = answerText.match(/\[(doc\d\d?\d?)]/g)
+  if (!citationLinks) {
+    citationLinks = answerText.match(/\[\d\d?\d?]/g)
+  }
+  const lengthDocN = '['.length
   let filteredCitations = [] as Citation[]
   let citationReindex = 0
   citationLinks?.forEach(link => {
-    // Replacing the links/citations with number
+    // Replacing the links/citations with a number
     const citationIndex = link.slice(lengthDocN, link.length - 1)
     const citation = cloneDeep(answer.citations[Number(citationIndex) - 1]) as Citation
     if (!filteredCitations.find(c => c.id === citationIndex) && citation) {
