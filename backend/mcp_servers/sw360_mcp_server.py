@@ -4,7 +4,7 @@ SW360 MCP Server
 ================
 Expose SW360 REST‑API data as Model Context Protocol (MCP) tools so that any MCP‑enabled chat client can query components, releases and vulnerabilities in real‑time.
 
-See also: https://sw360.example.com/resource/docs/api-guide.html
+See also: https://sw360.example.com/resource/docs/api-guide.html, https://sw360.example.com/group/guest/preferences
 
 Prerequisites
 -------------
@@ -19,9 +19,9 @@ Then configure your chat client to use the MCP server, e.g. in `mcp.json`:
     "servers": {
         "sw360-mcp-server": {
             "type": "stdio",
-            "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "command": "${workspaceFolder}/scripts/python.exe",
             "args": [
-                "${workspaceFolder}/sw360_mcp_server.py"
+                "${workspaceFolder}/backend/mcp_servers/sw360_mcp_server.py"
             ],
             "env": {
                 "SW360_API_KEY": "${env:SW360_API_KEY}",

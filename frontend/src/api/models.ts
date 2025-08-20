@@ -51,6 +51,21 @@ export type ChatMessage = {
   date: string
   feedback?: Feedback
   context?: string
+  // Function calling properties (for both NEW tools API and LEGACY function API)
+  tool_calls?: Array<{
+    id: string
+    type: string
+    function: {
+      name: string
+      arguments: string
+    }
+  }>
+  function_call?: {
+    name: string
+    arguments: string
+  }
+  tool_call_id?: string
+  name?: string // For function role messages
 }
 
 export type ExecResults = {

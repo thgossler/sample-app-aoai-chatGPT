@@ -282,6 +282,97 @@ def is_reasoning_model(model_name: str) -> bool:
             return True
     return False
 
+def supports_new_tools_api(model: str) -> bool:
+    """
+    Detect if the model supports the new tools API (tool_calls with role:"tool").
+    
+    Supported models include:
+    - GPT-5+ series: gpt-5, gpt-5-mini, gpt-5-nano, gpt-6+, etc.
+    - GPT-4.1+ series: gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, etc.
+    - GPT-4o series: gpt-4o, gpt-4o-mini, etc.
+    - O-series: o1, o1-mini, o3, o3-pro, o3-mini, o4+, etc.
+    - GPT-OSS series: gpt-oss-120b, gpt-oss-20b, etc.
+    
+    Returns False for legacy models like gpt-4, gpt-4-turbo, gpt-3.5-turbo, etc.
+    """
+    if not model:
+        return False
+    
+    model = model.lower().strip()
+    
+    # O-series models (o1, o3, o4+, etc.)
+    if model.startswith("o"):
+        try:
+            # Extract version number after "o"
+            version_part = model[1:]
+            major_version_str = ""
+            for char in version_part:
+                if char.isdigit():
+                    major_version_str += char
+                else:
+                    break
+            
+            if major_version_str:
+                major_version = int(major_version_str)
+                # o1, o3, o4+ support new tools API
+                return major_version >= 1
+        except (ValueError, IndexError):
+            pass
+        return False
+    
+    # GPT series models
+    if model.startswith("gpt-"):
+        version_part = model[4:]  # Remove "gpt-" prefix
+        
+        # Handle GPT-OSS series
+        if version_part.startswith("oss-"):
+            return True  # All gpt-oss variants support new tools API
+        
+        # Handle GPT-4o series
+        if version_part.startswith("4o"):
+            return True  # All gpt-4o variants support new tools API
+        
+        # Handle numbered GPT versions (4, 4.1, 5, 6, etc.)
+        try:
+            # Extract version number
+            version_str = ""
+            for char in version_part:
+                if char.isdigit() or char == ".":
+                    version_str += char
+                else:
+                    break
+            
+            if not version_str:
+                return False
+            
+            # Parse version (handle both "4" and "4.1" formats)
+            if "." in version_str:
+                # Handle versions like "4.1"
+                major_str, minor_str = version_str.split(".", 1)
+                major_version = int(major_str)
+                minor_version = float(minor_str) if minor_str else 0
+                
+                # GPT-4.1+ supports new tools API, but GPT-4.0 and plain GPT-4 don't
+                if major_version == 4:
+                    return minor_version >= 1
+                elif major_version >= 5:
+                    return True
+            else:
+                # Handle versions like "4", "5", "6"
+                major_version = int(version_str)
+                if major_version >= 5:
+                    return True
+                elif major_version == 4:
+                    # Plain "gpt-4" (without minor version) uses legacy API
+                    # But "gpt-4.1+" uses new API (handled above)
+                    return False
+            
+        except (ValueError, IndexError):
+            pass
+    
+    # Default to legacy API for unknown/unparseable models
+    return False
+
 def prepare_model_args(request_body, request_headers):
     """Prepare model arguments for OpenAI API call"""
     request_messages = request_body.get("messages", [])
@@ -312,7 +403,14 @@ def prepare_model_args(request_body, request_headers):
                         messages_helper["name"] = message["name"]
                     if "function_call" in message:
                         messages_helper["function_call"] = message["function_call"]
-                    messages_helper["content"] = message["content"]
+                    if "tool_calls" in message:
+                        messages_helper["tool_calls"] = message["tool_calls"]
+                    if "tool_call_id" in message:
+                        messages_helper["tool_call_id"] = message["tool_call_id"]
+                    if message.get("content") is not None:
+                        messages_helper["content"] = message["content"]
+                    else:
+                        messages_helper["content"] = None
                     if "context" in message:
                         context_obj = json.loads(message["context"])
                         messages_helper["context"] = context_obj
@@ -351,6 +449,10 @@ def prepare_model_args(request_body, request_headers):
             tools = mcp_manager.get_tools()
             if len(tools) > 0:
                 model_args["tools"] = tools
+                
+                # Log the API path being used for debugging
+                use_new_api = supports_new_tools_api(app_settings.azure_openai.model)
+                logging.debug(f"Model {app_settings.azure_openai.model} will use {'NEW tools API (role:tool)' if use_new_api else 'LEGACY function API (role:function)'}")
 
             # For reasoning models, use manual RAG instead of OYD
             if use_reasoning_model and app_settings.datasource:
@@ -437,47 +539,110 @@ async def promptflow_request(request):
     except Exception as e:
         logging.error(f"An error occurred while making promptflow_request: {e}")
 
-async def process_function_call(response):
-    """Process function calls from OpenAI response"""
+async def process_function_call(response, model_name=None):
+    """Process function calls from OpenAI response using the appropriate API path"""
     response_message = response.choices[0].message
     messages = []
 
-    if response_message.tool_calls:
-        for tool_call in response_message.tool_calls:
-            # Check if function exists
-            if not mcp_manager.is_tool_available(tool_call.function.name):
-                continue
-            
-            # Use unified MCP manager for all tool calls
+    # Handle case where no tool calls are requested
+    if not response_message.tool_calls:
+        logging.debug("No tool calls requested, returning None")
+        return None
+
+    # Determine which API path to use based on model version
+    use_new_tools_api = supports_new_tools_api(model_name or app_settings.azure_openai.model)
+    
+    logging.info(f"Using {'NEW tools API' if use_new_tools_api else 'LEGACY function API'} for model: {model_name or app_settings.azure_openai.model}")
+    logging.info(f"Processing {len(response_message.tool_calls)} tool call(s) in parallel")
+
+    # Filter available tool calls
+    available_tool_calls = []
+    for tool_call in response_message.tool_calls:
+        if not mcp_manager.is_tool_available(tool_call.function.name):
+            logging.warning(f"Tool '{tool_call.function.name}' not available, skipping")
+            continue
+        available_tool_calls.append(tool_call)
+    
+    if not available_tool_calls:
+        logging.warning("No available tool calls to process")
+        return None
+    
+    # Execute all available tool calls in parallel
+    async def execute_tool_call(tool_call):
+        try:
             function_response = await call_mcp_tool(
                 tool_call.function.name, 
                 json.loads(tool_call.function.arguments)
             )
-
-            # adding assistant response to messages
-            messages.append(
-                {
-                    "role": response_message.role,
+            return tool_call, function_response, None
+        except Exception as e:
+            logging.error(f"Error processing tool call '{tool_call.function.name}': {e}")
+            return tool_call, None, e
+    
+    # Run all tool calls in parallel
+    tool_call_tasks = [execute_tool_call(tool_call) for tool_call in available_tool_calls]
+    tool_call_results = await asyncio.gather(*tool_call_tasks, return_exceptions=True)
+    
+    # Process results and build response messages
+    if use_new_tools_api:
+        # NEW path (>= gpt-5): Use role:"tool" with tool_call_id
+        
+        # Add single assistant message with ALL tool_calls
+        assistant_tool_calls = []
+        for tool_call, function_response, error in tool_call_results:
+            if not isinstance(tool_call, Exception):  # Handle any gather exceptions
+                assistant_tool_calls.append({
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
+                    }
+                })
+        
+        if assistant_tool_calls:
+            messages.append({
+                "role": "assistant",
+                "content": response_message.content,
+                "tool_calls": assistant_tool_calls
+            })
+            
+            # Add individual tool messages for each successful call
+            for tool_call, function_response, error in tool_call_results:
+                if not isinstance(tool_call, Exception) and function_response is not None:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": function_response,
+                    })
+                elif not isinstance(tool_call, Exception) and error is not None:
+                    # Add error response for failed tool calls
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": f"Error: {str(error)}",
+                    })
+    else:
+        # LEGACY path (< gpt-5): Use role:"function" - process first successful call only
+        for tool_call, function_response, error in tool_call_results:
+            if not isinstance(tool_call, Exception) and function_response is not None:
+                messages.append({
+                    "role": "assistant",
                     "function_call": {
                         "name": tool_call.function.name,
                         "arguments": tool_call.function.arguments,
                     },
                     "content": None,
-                }
-            )
-            
-            # adding function response to messages
-            messages.append(
-                {
+                })
+                
+                messages.append({
                     "role": "function",
                     "name": tool_call.function.name,
                     "content": function_response,
-                }
-            )  # extend conversation with function response
-        
-        return messages
+                })
+                break  # Legacy API only supports single function call
     
-    return None
+    return messages if messages else None
 
 async def generate_title(messages):
     """Generate a title for the conversation based on the messages"""
@@ -502,13 +667,78 @@ async def generate_title(messages):
         return fallback_title
 
 async def send_chat_request(request_body, request_headers):
+    # Filter messages based on model capabilities and context
+    model_name = app_settings.azure_openai.model
+    use_new_tools_api = supports_new_tools_api(model_name)
+    
     filtered_messages = []
     messages = request_body.get("messages", [])
-    for message in messages:
-        if message.get("role") != 'tool':
+    
+    # For NEW tools API: Keep all messages but validate tool message sequence
+    # For LEGACY function API: Filter out tool role messages and replace with function role
+    
+    if use_new_tools_api:
+        # NEW tools API: Keep all messages but validate sequence
+        for i, message in enumerate(messages):
+            if message.get("role") == "tool":
+                # For tool messages, ensure they have tool_call_id and follow an assistant message with tool_calls
+                if "tool_call_id" not in message:
+                    logging.warning(f"Tool message at index {i} missing tool_call_id, skipping")
+                    continue
+                    
+                # Check if the previous assistant message has tool_calls
+                prev_assistant_msg = None
+                for j in range(i-1, -1, -1):
+                    if messages[j].get("role") == "assistant":
+                        prev_assistant_msg = messages[j]
+                        break
+                
+                if prev_assistant_msg and "tool_calls" not in prev_assistant_msg:
+                    logging.warning(f"Tool message at index {i} doesn't follow an assistant message with tool_calls, skipping")
+                    continue
+                    
             filtered_messages.append(message)
+    else:
+        # LEGACY function API: Convert tool messages to function messages, filter tool_calls
+        for message in messages:
+            if message.get("role") == "tool":
+                # Skip tool role messages for legacy models
+                continue
+            elif message.get("role") == "assistant" and "tool_calls" in message:
+                # Convert assistant message with tool_calls to function_call format
+                filtered_msg = {
+                    "role": "assistant",
+                    "content": message.get("content")
+                }
+                # Add function_call if tool_calls exist
+                if message.get("tool_calls") and len(message["tool_calls"]) > 0:
+                    first_tool_call = message["tool_calls"][0]
+                    filtered_msg["function_call"] = {
+                        "name": first_tool_call["function"]["name"],
+                        "arguments": first_tool_call["function"]["arguments"]
+                    }
+                    filtered_msg["content"] = None
+                filtered_messages.append(filtered_msg)
+            else:
+                # Keep other messages as-is
+                filtered_messages.append(message)
             
     request_body['messages'] = filtered_messages
+    
+    # Debug logging for message sequence
+    logging.debug(f"Filtered messages for {model_name} ({'NEW tools API' if use_new_tools_api else 'LEGACY function API'}):")
+    for i, msg in enumerate(filtered_messages):
+        msg_info = f"  [{i}] {msg.get('role', 'unknown')}"
+        if msg.get('role') == 'assistant':
+            if 'tool_calls' in msg:
+                msg_info += f" with {len(msg['tool_calls'])} tool_calls"
+            elif 'function_call' in msg:
+                msg_info += f" with function_call: {msg['function_call'].get('name', 'unknown')}"
+        elif msg.get('role') == 'tool':
+            msg_info += f" (tool_call_id: {msg.get('tool_call_id', 'missing')})"
+        elif msg.get('role') == 'function':
+            msg_info += f" (name: {msg.get('name', 'missing')})"
+        logging.debug(msg_info)
     
     try:
         # Initialize OpenAI client and MCP tools BEFORE preparing model args
@@ -674,29 +904,33 @@ async def complete_chat_request(request_body, request_headers):
     else:
         response, apim_request_id = await send_chat_request(request_body, request_headers)
         history_metadata = request_body.get("history_metadata", {})
-        non_streaming_response = format_non_streaming_response(response, history_metadata, apim_request_id)
-
+        
+        # Check if tools are available and if the model made any tool calls
         tools = mcp_manager.get_tools()
         if len(tools) > 0:
-            function_response = await process_function_call(response)  # Add await here
+            function_response = await process_function_call(response, app_settings.azure_openai.model)
 
             if function_response:
+                # Tool calls were made, extend conversation and get final response
                 request_body["messages"].extend(function_response)
-
                 response, apim_request_id = await send_chat_request(request_body, request_headers)
                 history_metadata = request_body.get("history_metadata", {})
-                non_streaming_response = format_non_streaming_response(response, history_metadata, apim_request_id)
+            # If no function_response, the model chose not to use tools, proceed with original response
+        
+        # Format the final response
+        non_streaming_response = format_non_streaming_response(response, history_metadata, apim_request_id)
 
     return non_streaming_response
 
 class AzureOpenaiFunctionCallStreamState():
-    def __init__(self):
+    def __init__(self, model_name=None):
         self.tool_calls = []                # All tool calls detected in the stream
         self.tool_name = ""                 # Tool name being streamed
         self.tool_arguments_stream = ""     # Tool arguments being streamed
         self.current_tool_call = None       # JSON with the tool name and arguments currently being streamed
         self.function_messages = []         # All function messages to be appended to the chat history
         self.streaming_state = "INITIAL"    # Streaming state (INITIAL, STREAMING, COMPLETED)
+        self.use_new_tools_api = supports_new_tools_api(model_name or app_settings.azure_openai.model)  # API path selection
 
 async def process_function_call_stream(completionChunk, function_call_stream_state, request_body, request_headers, history_metadata, apim_request_id):
     if hasattr(completionChunk, "choices") and len(completionChunk.choices) > 0:
@@ -727,27 +961,90 @@ async def process_function_call_stream(completionChunk, function_call_stream_sta
             function_call_stream_state.current_tool_call["tool_arguments"] = function_call_stream_state.tool_arguments_stream
             function_call_stream_state.tool_calls.append(function_call_stream_state.current_tool_call)
             
+            # Process all tool calls in parallel instead of just the first one
+            logging.info(f"Processing {len(function_call_stream_state.tool_calls)} tool call(s) in parallel from stream")
+            
+            # Filter available tool calls
+            available_tool_calls = []
             for tool_call in function_call_stream_state.tool_calls:
-                # Use unified MCP manager for all tool calls
-                tool_response = await call_mcp_tool(
-                    tool_call["tool_name"], 
-                    json.loads(tool_call["tool_arguments"])
-                )
-
-                function_call_stream_state.function_messages.append({
-                    "role": "assistant",
-                    "function_call": {
-                        "name" : tool_call["tool_name"],
-                        "arguments": tool_call["tool_arguments"]
-                    },
-                    "content": None
-                })
-                function_call_stream_state.function_messages.append({
-                    "tool_call_id": tool_call["tool_id"],
-                    "role": "function",
-                    "name": tool_call["tool_name"],
-                    "content": tool_response,
-                })
+                if not mcp_manager.is_tool_available(tool_call["tool_name"]):
+                    logging.warning(f"Tool '{tool_call['tool_name']}' not available in stream, skipping")
+                    continue
+                available_tool_calls.append(tool_call)
+            
+            if not available_tool_calls:
+                logging.warning("No available tool calls to process in stream")
+                function_call_stream_state.streaming_state = "COMPLETED"
+                return function_call_stream_state.streaming_state
+            
+            # Execute all available tool calls in parallel
+            async def execute_stream_tool_call(tool_call):
+                try:
+                    tool_response = await call_mcp_tool(
+                        tool_call["tool_name"], 
+                        json.loads(tool_call["tool_arguments"])
+                    )
+                    return tool_call, tool_response, None
+                except Exception as e:
+                    logging.error(f"Error processing stream tool call '{tool_call['tool_name']}': {e}")
+                    return tool_call, None, e
+            
+            # Run all tool calls in parallel
+            tool_call_tasks = [execute_stream_tool_call(tool_call) for tool_call in available_tool_calls]
+            tool_call_results = await asyncio.gather(*tool_call_tasks, return_exceptions=True)
+            
+            # Process results and build response messages
+            if function_call_stream_state.use_new_tools_api:
+                # NEW path (>= gpt-5): Use role:"tool" with tool_call_id
+                
+                # Add single assistant message with ALL tool_calls
+                assistant_tool_calls = []
+                for tool_call, tool_response, error in tool_call_results:
+                    if not isinstance(tool_call, Exception):  # Handle any gather exceptions
+                        assistant_tool_calls.append({
+                            "id": tool_call["tool_id"],
+                            "type": "function", 
+                            "function": {
+                                "name": tool_call["tool_name"],
+                                "arguments": tool_call["tool_arguments"]
+                            }
+                        })
+                
+                if assistant_tool_calls:
+                    function_call_stream_state.function_messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": assistant_tool_calls
+                    })
+                    
+                    # Add individual tool messages for each call (successful or failed)
+                    for tool_call, tool_response, error in tool_call_results:
+                        if not isinstance(tool_call, Exception):
+                            content = tool_response if tool_response is not None else f"Error: {str(error)}"
+                            function_call_stream_state.function_messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call["tool_id"],
+                                "content": content,
+                            })
+            else:
+                # LEGACY path (< gpt-5): Use role:"function" - process first successful call only
+                for tool_call, tool_response, error in tool_call_results:
+                    if not isinstance(tool_call, Exception) and tool_response is not None:
+                        function_call_stream_state.function_messages.append({
+                            "role": "assistant",
+                            "function_call": {
+                                "name": tool_call["tool_name"],
+                                "arguments": tool_call["tool_arguments"]
+                            },
+                            "content": None
+                        })
+                        
+                        function_call_stream_state.function_messages.append({
+                            "role": "function",
+                            "name": tool_call["tool_name"],
+                            "content": tool_response,
+                        })
+                        break  # Legacy API only supports single function call
             
             function_call_stream_state.streaming_state = "COMPLETED"
             return function_call_stream_state.streaming_state
@@ -763,7 +1060,7 @@ async def stream_chat_request(request_body, request_headers):
         tools = mcp_manager.get_tools()
         if len(tools) > 0:
             # Maintain state during function call streaming
-            function_call_stream_state = AzureOpenaiFunctionCallStreamState()
+            function_call_stream_state = AzureOpenaiFunctionCallStreamState(app_settings.azure_openai.model)
             
             async for completionChunk in response:
                 stream_state = await process_function_call_stream(completionChunk, function_call_stream_state, request_body, request_headers, history_metadata, apim_request_id)

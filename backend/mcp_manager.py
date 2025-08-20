@@ -157,6 +157,7 @@ class MCPServerManager:
             tools_list = await conn.list_tools()
             
             # Convert MCP tools to OpenAI function format
+            logging.debug(f"Initializing tools for MCP server '{server.name}':")
             for tool in tools_list:
                 openai_tool = {
                     "type": "function",
@@ -168,8 +169,10 @@ class MCPServerManager:
                 }
                 self.tools.append(openai_tool)
                 self.available_tools.append(f"{server.tool_prefix}{tool.name}")
+                logging.debug(f" - {server.tool_prefix}{tool.name}")
 
         logging.info(f"MCP server '{server.name}' initialized with {len(tools_list)} tools")
+
         return True
 
     async def _initialize_local_http_server(self, server: MCPServerConfig) -> bool:
