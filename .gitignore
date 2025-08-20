@@ -1,5 +1,5 @@
 .venv
-.env
+.env*
 frontend/node_modules
 .azure/
 __pycache__/

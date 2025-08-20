@@ -31,11 +31,14 @@ export const enumerateCitations = (citations: Citation[]) => {
 export function parseAnswer(answer: AskResponse): ParsedAnswer {
   if (typeof answer.answer !== "string") return null
   let answerText = answer.answer
+
+  let lengthDocN = '[doc'.length
   let citationLinks = answerText.match(/\[(doc\d\d?\d?)]/g)
+
   if (!citationLinks) {
     citationLinks = answerText.match(/\[\d\d?\d?]/g)
+    lengthDocN = '['.length
   }
-  const lengthDocN = '['.length
   let filteredCitations = [] as Citation[]
   let citationReindex = 0
   citationLinks?.forEach(link => {
