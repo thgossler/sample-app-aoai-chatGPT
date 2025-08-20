@@ -487,13 +487,19 @@ async def generate_title(messages):
             for message in messages:
                 if message.get("role") == "user" and message.get("content"):
                     content = message["content"]
-                    # Truncate to first 50 characters for title
-                    title = content[:50] + "..." if len(content) > 50 else content
-                    return title
-        return f"Chat {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                    # Ensure content is not just whitespace
+                    if content and content.strip():
+                        # Truncate to first 50 characters for title
+                        title = content[:50] + "..." if len(content) > 50 else content
+                        return title
+        
+        fallback_title = f"Chat {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        logging.debug(f"No valid user message found, using fallback title: '{fallback_title}'")
+        return fallback_title
     except Exception as e:
-        logging.error(f"Error generating title: {e}")
-        return f"Chat {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        fallback_title = f"Chat {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        logging.error(f"Error generating title: {e}, using fallback: '{fallback_title}'")
+        return fallback_title
 
 async def send_chat_request(request_body, request_headers):
     filtered_messages = []
@@ -976,7 +982,7 @@ async def add_conversation():
             raise Exception("No user message found")
 
         # Submit request to Chat Completions for response
-        request_body = await request.get_json()
+        request_body = request_json  # Reuse the already parsed request instead of parsing again
         history_metadata["conversation_id"] = conversation_id
         request_body["history_metadata"] = history_metadata
         return await conversation_internal(request_body, request.headers)
@@ -1374,11 +1380,10 @@ async def generate_title(conversation_messages) -> str:
             "messages": messages,
             "temperature": 1
         }
-        max_tokens = 64
         if is_reasoning_model(model_name):
-            model_args["max_completion_tokens"] = max_tokens
+            model_args["max_completion_tokens"] = 256
         else:
-            model_args["max_tokens"] = max_tokens
+            model_args["max_tokens"] = 64
         response = await azure_openai_client.chat.completions.create(**model_args)
         title = response.choices[0].message.content
         return title
