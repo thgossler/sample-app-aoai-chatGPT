@@ -182,6 +182,16 @@ class SW360Client:
             success = False
         return success
 
+    def _strip_quotes(self, text: str) -> str:
+        """
+        Remove leading and trailing quotes from a string.
+        """
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1]
+        if text.startswith("'") and text.endswith("'"):
+            text = text[1:-1]
+        return text
+
     # -------------------------- public API -----------------------------
     def get_project(self, project_id: str):
         """
@@ -191,6 +201,7 @@ class SW360Client:
             dict: Project data if found
             None: If project not found
         """
+        project_id = self._strip_quotes(project_id)
         url = f"{self.url_root}/resource/api/projects/{project_id}"
         return self._get(url, {"allDetails": "true"})
 
@@ -201,6 +212,7 @@ class SW360Client:
         Returns:
             list: List of matching projects (empty list if none found)
         """
+        project_name = self._strip_quotes(project_name)
         url = f"{self.url_root}/resource/api/projects"
         project_name = "+".join(project_name.split())
         if not project_name:
@@ -240,6 +252,7 @@ class SW360Client:
         Returns:
             list: List of releases (empty list if none found)
         """
+        project_id = self._strip_quotes(project_id)
         url = f"{self.url_root}/resource/api/projects/{project_id}/releases"
         result = self._get(url, {"transitive": "false", "page": "0", "page_entries": "250", "sort": "name,desc"})
         
@@ -263,6 +276,7 @@ class SW360Client:
         Returns:
             list: List of vulnerabilities (empty list if none found)
         """
+        project_id = self._strip_quotes(project_id)
         url = f"{self.url_root}/resource/api/projects/{project_id}/vulnerabilities"
         result = self._get(url, {"page": "0", "page_entries": "250", "sort": "externalId"})
         
@@ -294,6 +308,7 @@ class SW360Client:
         Returns:
             list: List of vulnerability tracking statuses (empty list if none found)
         """
+        project_id = self._strip_quotes(project_id)
         url = f"{self.url_root}/resource/api/vulnerabilities/trackingStatus/{project_id}"
         result = self._get(url, {"page": "0", "page_entries": "250", "sort": "name,asc"})
         
@@ -321,6 +336,10 @@ class SW360Client:
         Returns:
             list: List of matching packages (empty list if none found)
         """
+        name = self._strip_quotes(name)
+        version = self._strip_quotes(version) if version else None
+        package_manager = self._strip_quotes(package_manager) if package_manager else None
+        package_url = self._strip_quotes(package_url) if package_url else None
         url = f"{self.url_root}/resource/api/packages"
         params = {"name": name, "allDetails": "true", "sort": "name,desc"}
         if not name:
@@ -361,6 +380,7 @@ class SW360Client:
             dict: Package data if found
             None: If package not found
         """
+        href = self._strip_quotes(href)
         return self._get(href, {"allDetails": "true"})
 
     def get_release(self, release_id: str):
@@ -371,6 +391,7 @@ class SW360Client:
             dict: Release data if found
             None: If release not found
         """
+        release_id = self._strip_quotes(release_id)
         url = f"{self.url_root}/resource/api/releases/{release_id}"
         return self._get(url, {"allDetails": "true"})
 
