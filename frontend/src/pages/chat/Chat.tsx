@@ -921,6 +921,30 @@ const Chat = () => {
     return []
   }
 
+  const parseCitationFromMessages = (messages: ChatMessage[], currentIndex: number): Citation[] => {
+    // Look backwards from the current assistant message to find citation tool messages
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      const message = messages[i]
+      if (message?.role === 'tool' && typeof message?.content === "string") {
+        try {
+          const toolMessage = JSON.parse(message.content) as ToolMessageContent
+          // Check if this tool message contains citations (not tool call results)
+          if (toolMessage.citations && Array.isArray(toolMessage.citations) && toolMessage.citations.length > 0) {
+            return toolMessage.citations
+          }
+        } catch {
+          // Continue searching if this tool message doesn't contain valid JSON or citations
+          continue
+        }
+      }
+      // Stop searching when we hit a user message (start of this conversation turn)
+      if (message?.role === 'user') {
+        break
+      }
+    }
+    return []
+  }
+
   const parsePlotFromMessage = (message: ChatMessage) => {
     if (message?.role && message?.role === "tool" && typeof message?.content === "string") {
       try {
@@ -1011,7 +1035,7 @@ const Chat = () => {
                         {typeof answer.content === "string" && <Answer
                           answer={{
                             answer: answer.content,
-                            citations: parseCitationFromMessage(messages[index - 1]),
+                            citations: parseCitationFromMessages(messages, index),
                             generated_chart: parsePlotFromMessage(messages[index - 1]),
                             message_id: answer.id,
                             feedback: answer.feedback,

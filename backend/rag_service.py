@@ -185,8 +185,8 @@ class AzureSearchRAGRetriever(BaseRAGRetriever):
                             content_parts.append(str(result[field]))
                 else:
                     # Fallback to common field names
-                    for field in ["content", "text", "body"]:
-                        if field in result and result[field]:
+                    for field in ["content", "text", "body", "description"]:
+                        if field in result and result.get(field):
                             content_parts.append(str(result[field]))
                             break
                 

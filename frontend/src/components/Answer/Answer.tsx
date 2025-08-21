@@ -80,8 +80,8 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
       if (sourceUrl && sourceUrl.includes('#')) {
         const headingMatch = citation.content.match(/^(#{1,6})\s+(.*)$/m);
         if (headingMatch) {
-          var heading = headingMatch[2];
-          if (sourceTitle && sourceTitle !== heading) {
+          var heading = headingMatch[2].trimEnd();
+          if (sourceTitle && heading && !sourceTitle.trimEnd().endsWith(heading)) {
             sourceTitle += ` - ${heading}`;
           }
         }

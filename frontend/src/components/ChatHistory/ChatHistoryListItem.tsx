@@ -142,7 +142,10 @@ export const ChatHistoryListItemCell: React.FC<ChatHistoryListItemCellProps> = (
     appStateContext?.dispatch({ type: 'UPDATE_CURRENT_CHAT', payload: item })
   }
 
-  const truncatedTitle = item?.title?.length > 28 ? `${item.title.substring(0, 28)} ...` : item.title
+  let truncatedTitle = item?.title?.length > 28 ? `${item.title.substring(0, 28)} ...` : item.title
+  if (!truncatedTitle || truncatedTitle.trim() === '') {
+    truncatedTitle = 'Saved conversation'
+  }
 
   const handleSaveEdit = async (e: any) => {
     e.preventDefault()

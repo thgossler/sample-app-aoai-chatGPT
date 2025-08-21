@@ -654,8 +654,9 @@ async def generate_title(messages):
                     content = message["content"]
                     # Ensure content is not just whitespace
                     if content and content.strip():
-                        # Truncate to first 50 characters for title
-                        title = content[:50] + "..." if len(content) > 50 else content
+                        # Truncate title
+                        max_len = 28
+                        title = content[:max_len] + "..." if len(content) > max_len else content
                         return title
         
         fallback_title = f"Chat {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"
@@ -907,6 +908,8 @@ async def complete_chat_request(request_body, request_headers):
         
         # Check if tools are available and if the model made any tool calls
         tools = mcp_manager.get_tools()
+        original_citations = getattr(response, '_citations', None)  # Preserve citations from original response
+        
         if len(tools) > 0:
             function_response = await process_function_call(response, app_settings.azure_openai.model)
 
@@ -915,6 +918,10 @@ async def complete_chat_request(request_body, request_headers):
                 request_body["messages"].extend(function_response)
                 response, apim_request_id = await send_chat_request(request_body, request_headers)
                 history_metadata = request_body.get("history_metadata", {})
+                
+                # Preserve citations from the original response if they exist
+                if original_citations and not hasattr(response, '_citations'):
+                    response._citations = original_citations
             # If no function_response, the model chose not to use tools, proceed with original response
         
         # Format the final response
@@ -1058,6 +1065,8 @@ async def stream_chat_request(request_body, request_headers):
     
     async def generate(apim_request_id, history_metadata):
         tools = mcp_manager.get_tools()
+        original_citations = getattr(response, '_citations', None)  # Preserve citations from original response
+        
         if len(tools) > 0:
             # Maintain state during function call streaming
             function_call_stream_state = AzureOpenaiFunctionCallStreamState(app_settings.azure_openai.model)
@@ -1071,10 +1080,35 @@ async def stream_chat_request(request_body, request_headers):
 
                 # Function call stream completed, functions were executed.
                 # Append function calls and results to history and send to OpenAI, to stream the final answer.
-                if stream_state == "COMPLETED":
+                if stream_state == "COMPLETED" or stream_state == None:
                     request_body["messages"].extend(function_call_stream_state.function_messages)
                     function_response, apim_request_id = await send_chat_request(request_body, request_headers)
+                    
+                    # Handle citation injection for tool call scenarios
+                    citations_injected = False
                     async for functionCompletionChunk in function_response:
+                        # Inject citations only on the first chunk (once per stream) when tool calls are involved
+                        # Use original citations if the new response doesn't have citations
+                        citations_to_inject = getattr(function_response, '_citations', original_citations)
+                        if not citations_injected and citations_to_inject:
+                            context_obj = {
+                                "citations": citations_to_inject,
+                                "intent": "Retrieved context for reasoning model with tool calls"
+                            }
+                            
+                            # Create citation response in the same format as normal streaming responses
+                            citation_response = {
+                                "id": functionCompletionChunk.id,
+                                "model": functionCompletionChunk.model,
+                                "created": functionCompletionChunk.created,
+                                "object": functionCompletionChunk.object,
+                                "choices": [{"messages": [{"role": "tool", "content": json.dumps(context_obj)}]}],
+                                "history_metadata": history_metadata,
+                                "apim-request-id": apim_request_id,
+                            }
+                            yield citation_response
+                            citations_injected = True
+                        
                         yield format_stream_response(functionCompletionChunk, history_metadata, apim_request_id)
                 
         else:
@@ -1678,7 +1712,7 @@ async def generate_title(conversation_messages) -> str:
             "temperature": 1
         }
         if is_reasoning_model(model_name):
-            model_args["max_completion_tokens"] = 256
+            model_args["max_completion_tokens"] = 512
         else:
             model_args["max_tokens"] = 64
         response = await azure_openai_client.chat.completions.create(**model_args)
