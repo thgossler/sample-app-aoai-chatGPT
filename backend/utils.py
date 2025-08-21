@@ -162,21 +162,49 @@ def format_stream_response(chatCompletionChunk, history_metadata, apim_request_i
                 response_obj["choices"][0]["messages"].append(messageObj)
                 return response_obj
             if delta.tool_calls:
-                messageObj = {
-                    "role": "tool",
-                    "tool_calls": {
-                        "id": delta.tool_calls[0].id,
-                        "function": {
-                            "name" : delta.tool_calls[0].function.name,
-                            "arguments": delta.tool_calls[0].function.arguments
-                        },
-                        "type": delta.tool_calls[0].type
+                # Handle streaming tool calls - they come in chunks
+                tool_call = delta.tool_calls[0]
+                
+                # For streaming, we need to handle partial tool calls more gracefully
+                # The function name might be None in intermediate chunks, and arguments build up over time
+                if hasattr(tool_call, 'function') and tool_call.function is not None:
+                    
+                    # Build the tool call object with available data
+                    messageObj = {
+                        "role": "tool",
+                        "tool_calls": {
+                            "id": getattr(tool_call, 'id', None),
+                            "function": {
+                                "name": getattr(tool_call.function, 'name', None),
+                                "arguments": getattr(tool_call.function, 'arguments', '')
+                            },
+                            "type": getattr(tool_call, 'type', 'function')
+                        }
                     }
-                }
-                if hasattr(delta, "context"):
-                    messageObj["context"] = json.dumps(delta.context)
-                response_obj["choices"][0]["messages"].append(messageObj)
-                return response_obj
+                    
+                    if hasattr(delta, "context"):
+                        messageObj["context"] = json.dumps(delta.context)
+                    
+                    # Only add to response if we have meaningful data
+                    # For intermediate chunks with just argument fragments, don't send them individually
+                    # The AzureOpenaiFunctionCallStreamState in app.py handles the accumulation
+                    function_name = getattr(tool_call.function, 'name', None)
+                    function_args = getattr(tool_call.function, 'arguments', '')
+                    
+                    # Only send chunks that have a function name OR are the start of a new tool call (has ID)
+                    # This prevents sending intermediate argument fragments
+                    if function_name is not None or getattr(tool_call, 'id', None) is not None:
+                        response_obj["choices"][0]["messages"].append(messageObj)
+                        return response_obj
+                    else:
+                        # This is likely an intermediate argument chunk - don't send separately
+                        # The AzureOpenaiFunctionCallStreamState will accumulate these
+                        logging.debug(f"Accumulating tool call argument chunk: args='{function_args}'")
+                        return {}
+                else:
+                    # Truly malformed tool call - log and skip
+                    logging.warning(f"Skipping malformed tool call in streaming response: tool_call={tool_call}")
+                    return {}
 
     # Extract delta for debugging if available
     debug_delta = None

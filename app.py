@@ -282,6 +282,35 @@ def is_reasoning_model(model_name: str) -> bool:
             return True
     return False
 
+def validate_tool_calls(tool_calls):
+    """Validate tool_calls structure to prevent malformed data from being sent to OpenAI API"""
+    if not tool_calls or not isinstance(tool_calls, list):
+        return False
+    
+    for tool_call in tool_calls:
+        if not isinstance(tool_call, dict):
+            return False
+        
+        # Check required fields
+        if "function" not in tool_call:
+            return False
+        
+        function = tool_call["function"]
+        if not isinstance(function, dict):
+            return False
+        
+        # Function name is required and must not be null/empty
+        if "name" not in function or function["name"] is None or function["name"] == "":
+            return False
+        
+        # Arguments should be a string (JSON), default to empty object if missing
+        if "arguments" not in function:
+            function["arguments"] = "{}"
+        elif function["arguments"] is None:
+            function["arguments"] = "{}"
+    
+    return True
+
 def supports_new_tools_api(model: str) -> bool:
     """
     Detect if the model supports the new tools API (tool_calls with role:"tool").
@@ -404,7 +433,13 @@ def prepare_model_args(request_body, request_headers):
                     if "function_call" in message:
                         messages_helper["function_call"] = message["function_call"]
                     if "tool_calls" in message:
-                        messages_helper["tool_calls"] = message["tool_calls"]
+                        # Validate tool_calls before sending to API
+                        if validate_tool_calls(message["tool_calls"]):
+                            messages_helper["tool_calls"] = message["tool_calls"]
+                        else:
+                            logging.warning(f"Skipping malformed tool_calls in message: {message.get('id', 'unknown')}")
+                            logging.warning(f"Malformed tool_calls: {json.dumps(message['tool_calls'], indent=2)}")
+                            # Don't include malformed tool_calls
                     if "tool_call_id" in message:
                         messages_helper["tool_call_id"] = message["tool_call_id"]
                     if message.get("content") is not None:
@@ -558,10 +593,18 @@ async def process_function_call(response, model_name=None):
     # Filter available tool calls
     available_tool_calls = []
     for tool_call in response_message.tool_calls:
-        if not mcp_manager.is_tool_available(tool_call.function.name):
-            logging.warning(f"Tool '{tool_call.function.name}' not available, skipping")
+        # Validate tool call structure
+        if (hasattr(tool_call, 'function') and 
+            hasattr(tool_call.function, 'name') and 
+            tool_call.function.name is not None):
+            
+            if not mcp_manager.is_tool_available(tool_call.function.name):
+                logging.warning(f"Tool '{tool_call.function.name}' not available, skipping")
+                continue
+            available_tool_calls.append(tool_call)
+        else:
+            logging.warning(f"Malformed tool call from OpenAI API, skipping: {tool_call}")
             continue
-        available_tool_calls.append(tool_call)
     
     if not available_tool_calls:
         logging.warning("No available tool calls to process")
@@ -679,7 +722,7 @@ async def send_chat_request(request_body, request_headers):
     # For LEGACY function API: Filter out tool role messages and replace with function role
     
     if use_new_tools_api:
-        # NEW tools API: Keep all messages but validate sequence
+        # NEW tools API: Keep all messages but validate sequence and structure
         for i, message in enumerate(messages):
             if message.get("role") == "tool":
                 # For tool messages, ensure they have tool_call_id and follow an assistant message with tool_calls
@@ -697,6 +740,30 @@ async def send_chat_request(request_body, request_headers):
                 if prev_assistant_msg and "tool_calls" not in prev_assistant_msg:
                     logging.warning(f"Tool message at index {i} doesn't follow an assistant message with tool_calls, skipping")
                     continue
+            
+            elif message.get("role") == "assistant" and "tool_calls" in message:
+                # Validate tool_calls structure to prevent malformed data
+                tool_calls = message.get("tool_calls")
+                if tool_calls and isinstance(tool_calls, list):
+                    valid_tool_calls = []
+                    for tool_call in tool_calls:
+                        if (isinstance(tool_call, dict) and 
+                            "function" in tool_call and 
+                            isinstance(tool_call["function"], dict) and
+                            tool_call["function"].get("name") is not None):
+                            valid_tool_calls.append(tool_call)
+                        else:
+                            logging.warning(f"Removing malformed tool call from message {i}: {tool_call}")
+                    
+                    # Update message with only valid tool calls
+                    if valid_tool_calls:
+                        message = message.copy()  # Don't modify original
+                        message["tool_calls"] = valid_tool_calls
+                    else:
+                        # Remove tool_calls if none are valid
+                        message = message.copy()
+                        message.pop("tool_calls", None)
+                        logging.warning(f"Removed all malformed tool_calls from assistant message {i}")
                     
             filtered_messages.append(message)
     else:
@@ -711,35 +778,31 @@ async def send_chat_request(request_body, request_headers):
                     "role": "assistant",
                     "content": message.get("content")
                 }
-                # Add function_call if tool_calls exist
-                if message.get("tool_calls") and len(message["tool_calls"]) > 0:
-                    first_tool_call = message["tool_calls"][0]
-                    filtered_msg["function_call"] = {
-                        "name": first_tool_call["function"]["name"],
-                        "arguments": first_tool_call["function"]["arguments"]
-                    }
-                    filtered_msg["content"] = None
+                # Add function_call if tool_calls exist and are valid
+                tool_calls = message.get("tool_calls")
+                if tool_calls and len(tool_calls) > 0:
+                    first_tool_call = tool_calls[0]
+                    # Validate tool call structure to prevent malformed data
+                    if (isinstance(first_tool_call, dict) and 
+                        "function" in first_tool_call and 
+                        isinstance(first_tool_call["function"], dict) and
+                        first_tool_call["function"].get("name") is not None):
+                        
+                        filtered_msg["function_call"] = {
+                            "name": first_tool_call["function"]["name"],
+                            "arguments": first_tool_call["function"].get("arguments", "{}")
+                        }
+                        filtered_msg["content"] = None
+                    else:
+                        logging.warning(f"Skipping malformed tool call in legacy mode: {first_tool_call}")
+                        # Keep the message but without tool calling
+                        
                 filtered_messages.append(filtered_msg)
             else:
                 # Keep other messages as-is
                 filtered_messages.append(message)
             
     request_body['messages'] = filtered_messages
-    
-    # Debug logging for message sequence
-    logging.debug(f"Filtered messages for {model_name} ({'NEW tools API' if use_new_tools_api else 'LEGACY function API'}):")
-    for i, msg in enumerate(filtered_messages):
-        msg_info = f"  [{i}] {msg.get('role', 'unknown')}"
-        if msg.get('role') == 'assistant':
-            if 'tool_calls' in msg:
-                msg_info += f" with {len(msg['tool_calls'])} tool_calls"
-            elif 'function_call' in msg:
-                msg_info += f" with function_call: {msg['function_call'].get('name', 'unknown')}"
-        elif msg.get('role') == 'tool':
-            msg_info += f" (tool_call_id: {msg.get('tool_call_id', 'missing')})"
-        elif msg.get('role') == 'function':
-            msg_info += f" (name: {msg.get('name', 'missing')})"
-        logging.debug(msg_info)
     
     try:
         # Initialize OpenAI client and MCP tools BEFORE preparing model args
@@ -947,26 +1010,68 @@ async def process_function_call_stream(completionChunk, function_call_stream_sta
         if response_message.tool_calls and function_call_stream_state.streaming_state in ["INITIAL", "STREAMING"]:
             function_call_stream_state.streaming_state = "STREAMING"
             for tool_call_chunk in response_message.tool_calls:
+                # Validate tool call chunk structure
+                if not hasattr(tool_call_chunk, 'function') or tool_call_chunk.function is None:
+                    logging.warning(f"Skipping malformed tool call chunk - missing function: {tool_call_chunk}")
+                    continue
+                
+                # Log tool call chunk for debugging
+                logging.debug(f"Processing tool call chunk: id={getattr(tool_call_chunk, 'id', None)}, "
+                            f"name={getattr(tool_call_chunk.function, 'name', None)}, "
+                            f"args='{getattr(tool_call_chunk.function, 'arguments', '')[:50]}{'...' if len(getattr(tool_call_chunk.function, 'arguments', '')) > 50 else ''}'")
+                
                 # New tool call
                 if tool_call_chunk.id:
+                    # Complete previous tool call if exists
                     if function_call_stream_state.current_tool_call:
-                        function_call_stream_state.tool_arguments_stream += tool_call_chunk.function.arguments if tool_call_chunk.function.arguments else ""
+                        chunk_args = getattr(tool_call_chunk.function, 'arguments', '') or ''
+                        function_call_stream_state.tool_arguments_stream += chunk_args
                         function_call_stream_state.current_tool_call["tool_arguments"] = function_call_stream_state.tool_arguments_stream
+                        function_call_stream_state.tool_calls.append(function_call_stream_state.current_tool_call)
+                        # Reset for new tool call
                         function_call_stream_state.tool_arguments_stream = ""
                         function_call_stream_state.tool_name = ""
-                        function_call_stream_state.tool_calls.append(function_call_stream_state.current_tool_call)
 
+                    # Start new tool call - function name might be in this chunk or subsequent ones
+                    function_name = getattr(tool_call_chunk.function, 'name', None)
+                    
                     function_call_stream_state.current_tool_call = {
                         "tool_id": tool_call_chunk.id,
-                        "tool_name": tool_call_chunk.function.name if function_call_stream_state.tool_name == "" else function_call_stream_state.tool_name
+                        "tool_name": function_name  # This might be None initially
                     }
+                    
+                    # If this chunk has function name, store it
+                    if function_name:
+                        function_call_stream_state.tool_name = function_name
+                    
+                    # Add any arguments from this chunk
+                    chunk_args = getattr(tool_call_chunk.function, 'arguments', '') or ''
+                    function_call_stream_state.tool_arguments_stream += chunk_args
                 else:
-                    function_call_stream_state.tool_arguments_stream += tool_call_chunk.function.arguments if tool_call_chunk.function.arguments else ""
+                    # Continuation of existing tool call
+                    if function_call_stream_state.current_tool_call:
+                        # Check if this chunk provides the function name that was missing
+                        function_name = getattr(tool_call_chunk.function, 'name', None)
+                        if function_name and not function_call_stream_state.current_tool_call.get("tool_name"):
+                            function_call_stream_state.current_tool_call["tool_name"] = function_name
+                            function_call_stream_state.tool_name = function_name
+                        
+                        # Accumulate arguments
+                        chunk_args = getattr(tool_call_chunk.function, 'arguments', '') or ''
+                        function_call_stream_state.tool_arguments_stream += chunk_args
                 
         # Function call - Streaming completed
         elif response_message.tool_calls is None and function_call_stream_state.streaming_state == "STREAMING":
-            function_call_stream_state.current_tool_call["tool_arguments"] = function_call_stream_state.tool_arguments_stream
-            function_call_stream_state.tool_calls.append(function_call_stream_state.current_tool_call)
+            # Complete the final tool call if it exists
+            if function_call_stream_state.current_tool_call:
+                function_call_stream_state.current_tool_call["tool_arguments"] = function_call_stream_state.tool_arguments_stream
+                
+                # Only add if we have a valid tool name (it might have been set in a later chunk)
+                tool_name = function_call_stream_state.current_tool_call.get("tool_name")
+                if tool_name and tool_name != "":
+                    function_call_stream_state.tool_calls.append(function_call_stream_state.current_tool_call)
+                else:
+                    logging.warning(f"Skipping tool call without valid name in stream completion: {function_call_stream_state.current_tool_call}")
             
             # Process all tool calls in parallel instead of just the first one
             logging.info(f"Processing {len(function_call_stream_state.tool_calls)} tool call(s) in parallel from stream")
@@ -974,8 +1079,14 @@ async def process_function_call_stream(completionChunk, function_call_stream_sta
             # Filter available tool calls
             available_tool_calls = []
             for tool_call in function_call_stream_state.tool_calls:
-                if not mcp_manager.is_tool_available(tool_call["tool_name"]):
-                    logging.warning(f"Tool '{tool_call['tool_name']}' not available in stream, skipping")
+                # Validate tool call structure
+                tool_name = tool_call.get("tool_name")
+                if not tool_name or tool_name == "":
+                    logging.warning(f"Tool call in stream has invalid name, skipping: {tool_call}")
+                    continue
+                    
+                if not mcp_manager.is_tool_available(tool_name):
+                    logging.warning(f"Tool '{tool_name}' not available in stream, skipping")
                     continue
                 available_tool_calls.append(tool_call)
             
@@ -1518,16 +1629,30 @@ async def get_conversation():
     )
 
     ## format the messages in the bot frontend format
-    messages = [
-        {
+    messages = []
+    for msg in conversation_messages:
+        message = {
             "id": msg["id"],
             "role": msg["role"],
-            "content": msg["content"],
+            "content": msg.get("content") if msg.get("content") is not None else None,  # Preserve null content
             "createdAt": msg["createdAt"],
             "feedback": msg.get("feedback"),
         }
-        for msg in conversation_messages
-    ]
+        
+        # Include tool-related fields if they exist
+        if "tool_calls" in msg:
+            message["tool_calls"] = msg["tool_calls"]
+        
+        if "tool_call_id" in msg:
+            message["tool_call_id"] = msg["tool_call_id"]
+        
+        if "function_call" in msg:
+            message["function_call"] = msg["function_call"]
+        
+        if "name" in msg:
+            message["name"] = msg["name"]
+        
+        messages.append(message)
 
     return jsonify({"conversation_id": conversation_id, "messages": messages}), 200
 

@@ -136,8 +136,21 @@ class CosmosConversationClient():
             'updatedAt': datetime.utcnow().isoformat(),
             'conversationId' : conversation_id,
             'role': input_message['role'],
-            'content': input_message['content']
+            'content': input_message.get('content', '')
         }
+
+        # Store tool-related fields for modern tool calling
+        if 'tool_calls' in input_message:
+            message['tool_calls'] = input_message['tool_calls']
+        
+        if 'tool_call_id' in input_message:
+            message['tool_call_id'] = input_message['tool_call_id']
+        
+        if 'function_call' in input_message:
+            message['function_call'] = input_message['function_call']
+        
+        if 'name' in input_message:
+            message['name'] = input_message['name']
 
         if self.enable_message_feedback:
             message['feedback'] = ''
