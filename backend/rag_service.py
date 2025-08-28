@@ -29,7 +29,7 @@ class RAGDocument:
         """Convert to citation format for frontend compatibility."""
         citation = {
             "content": self.content,
-            "title": self.title or "Document",
+            "title": self.title or self.filename or "Document",
             "url": self.url,
             "filepath": self.filename,
             "chunk_id": self.metadata.get("chunk_id", "0")
