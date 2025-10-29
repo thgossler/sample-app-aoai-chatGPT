@@ -20,12 +20,10 @@ fi
 . .venv/bin/activate
 
 echo ""
-echo "Starting backend"
+echo "Restoring backend python packages"
 echo ""
-dotenv
-open http://127.0.0.1:8081 2>/dev/null || xdg-open http://127.0.0.1:8081 2>/dev/null || true
-python -m uvicorn app:app --port 8081 --reload
+python -m pip install -r requirements.txt
 if [ $? -ne 0 ]; then
-    echo "Failed to start backend"
+    echo "Failed to restore backend python packages"
     exit $?
 fi

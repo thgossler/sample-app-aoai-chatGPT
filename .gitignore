@@ -1,13 +1,39 @@
+# Virtual environments
 .venv
+.venv/
+venv/
+env/
+ENV/
 .env*
+
+# Frontend
 frontend/node_modules
+
+# Azure
 .azure/
+
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Jupyter
 .ipynb_checkpoints/
+
+# Project specific
 mcp.json
+
+# Windows venv (legacy)
 Lib/
+Scripts/
 pyvenv.cfg
-scripts/
 Include/
+
+# Local/temp
 local/
 temp/
+
+# Ignore scripts folder (conflict with scripts/ in repo)
+# scripts/
