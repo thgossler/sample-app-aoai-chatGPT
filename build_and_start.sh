@@ -18,7 +18,9 @@ if [ -d ".venv" ]; then
 fi
 
 echo ""
-echo "Starting backend"
+echo "Starting backend (including Remote MCP server if enabled)"
+echo "  App URL:          http://127.0.0.1:8081"
+echo "  MCP endpoint:     http://127.0.0.1:8081/mcp  (if REMOTE_MCP_SERVER_ENABLED=true)"
 echo ""
 dotenv
 open http://127.0.0.1:8081 2>/dev/null || xdg-open http://127.0.0.1:8081 2>/dev/null || true

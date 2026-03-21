@@ -779,6 +779,47 @@ class _MongoDbSettings(BaseSettings, DatasourcePayloadConstructor):
         }
         
         
+class _RemoteMCPServerSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="REMOTE_MCP_",
+        env_file=DOTENV_PATH,
+        extra="ignore",
+        env_ignore_empty=True
+    )
+
+    server_enabled: bool = False
+    server_url: Optional[str] = None
+    server_path: str = "/mcp"
+    # Human-readable agent / product name used in tool descriptions.
+    # E.g. "R&D Buddy" → "Search the R&D Buddy knowledge base …"
+    # Defaults to the generic phrase when not set.
+    agent_name: Optional[str] = None
+
+    auth_tenant_id: Optional[str] = None
+    auth_client_id: Optional[str] = None
+    auth_audience: Optional[str] = None
+    auth_issuer: Optional[str] = None
+    # Comma-separated list of pre-authorized client IDs (e.g. VS Code)
+    auth_allowed_client_ids: Optional[str] = None
+    auth_multi_tenant: bool = False
+    auth_default_scope: Optional[str] = None
+    # Client secret only required for OBO flow
+    auth_client_secret: Optional[str] = None
+
+    @model_validator(mode="after")
+    def set_defaults(self) -> Self:
+        if self.auth_client_id and not self.auth_audience:
+            self.auth_audience = f"api://{self.auth_client_id}"
+        if self.auth_tenant_id and not self.auth_issuer:
+            if self.auth_multi_tenant:
+                self.auth_issuer = "https://login.microsoftonline.com/common/v2.0"
+            else:
+                self.auth_issuer = f"https://login.microsoftonline.com/{self.auth_tenant_id}/v2.0"
+        if self.auth_client_id and not self.auth_default_scope:
+            self.auth_default_scope = f"api://{self.auth_client_id}/MCP.Tools.Execute"
+        return self
+
+
 class _BaseSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=DOTENV_PATH,
@@ -799,7 +840,8 @@ class _AppSettings(BaseModel):
     search: _SearchCommonSettings = _SearchCommonSettings()
     ui: Optional[_UiSettings] = _UiSettings()
     citation_file: Optional[_CitationFileSettings] = None
-    
+    remote_mcp_server: Optional[_RemoteMCPServerSettings] = None
+
     # Constructed properties
     chat_history: Optional[_ChatHistorySettings] = None
     datasource: Optional[DatasourcePayloadConstructor] = None
@@ -825,6 +867,12 @@ class _AppSettings(BaseModel):
     def set_citation_file_settings(self) -> Self:
         # Always initialize citation file settings since all fields are optional
         self.citation_file = _CitationFileSettings()
+        return self
+
+    @model_validator(mode="after")
+    def set_remote_mcp_server_settings(self) -> Self:
+        # Always initialize remote MCP server settings (defaults to disabled)
+        self.remote_mcp_server = _RemoteMCPServerSettings()
         return self
     
     @model_validator(mode="after")

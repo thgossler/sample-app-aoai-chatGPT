@@ -43,6 +43,86 @@ from backend.utils import (
 from fastmcp import Client
 from backend.mcp_manager import MCPServerManager
 from backend.rag_service import init_rag_service, get_rag_service
+from backend.mcp_server.remote_mcp_server import RemoteMCPServer
+from backend.mcp_server.citation_resolver import CitationLinkResolver
+
+
+class _MCPASGIDispatch:
+    """
+    ASGI middleware that routes ``/mcp`` (Streamable HTTP) and
+    ``/sse`` / ``/messages`` (SSE legacy) requests to the FastMCP
+    Starlette app and forwards everything else to the Quart ASGI app.
+
+    This is needed because FastMCP uses Starlette's streaming / SSE transport
+    which must own the full ASGI lifecycle for ``/mcp`` requests — Quart's
+    router cannot support SSE streaming natively via its route handlers.
+
+    **Lifespan handling**: the ``lifespan`` ASGI scope is forwarded to the
+    Quart app only (Quart drives startup/shutdown).  The FastMCP Starlette app's
+    lifespan is bootstrapped separately via ``bootstrap_lifespan()`` which must
+    be called inside Quart's ``before_serving`` hook.
+
+    The ``/.well-known/oauth-protected-resource`` discovery endpoint continues
+    to be served by Quart (no auth required, simple JSON response).
+    """
+
+    def __init__(self, quart_asgi, mcp_asgi, sse_asgi=None):
+        self._quart = quart_asgi
+        self._mcp = mcp_asgi
+        self._sse = sse_asgi  # optional SSE backward-compat app
+        self._mcp_lifespan_ctx = None  # holds the running lifespan context
+
+    async def bootstrap_lifespan(self) -> None:
+        """Enter the FastMCP Starlette app's lifespan context manager.
+
+        FastMCP's ``StreamableHTTPSessionManager`` starts an anyio task group
+        during ASGI lifespan startup.  Because Quart owns the outer ASGI
+        lifespan, we must manually trigger the FastMCP startup here instead
+        of relying on ASGI scope forwarding.
+
+        Call this exactly once from Quart's ``before_serving`` hook, *after*
+        the ASGI middleware has been installed on the app.
+        """
+        mcp_app = self._mcp
+        # StarletteWithLifespan exposes a .lifespan property which is an
+        # async context manager.  Entering it runs all on_startup handlers,
+        # including the task group initialisation in StreamableHTTPSessionManager.
+        lifespan_cm = mcp_app.lifespan(mcp_app)  # type: ignore[arg-type]
+        self._mcp_lifespan_ctx = lifespan_cm
+        await lifespan_cm.__aenter__()
+        logging.info("FastMCP Starlette lifespan started")
+
+        if self._sse is not None:
+            sse_lifespan_cm = self._sse.lifespan(self._sse)  # type: ignore[arg-type]
+            self._sse_lifespan_ctx = sse_lifespan_cm
+            await sse_lifespan_cm.__aenter__()
+            logging.info("FastMCP SSE lifespan started")
+
+    async def shutdown_lifespan(self) -> None:
+        """Exit the FastMCP lifespan context (call from Quart's after_serving)."""
+        if self._mcp_lifespan_ctx is not None:
+            await self._mcp_lifespan_ctx.__aexit__(None, None, None)
+            self._mcp_lifespan_ctx = None
+        if getattr(self, "_sse_lifespan_ctx", None) is not None:
+            await self._sse_lifespan_ctx.__aexit__(None, None, None)
+            self._sse_lifespan_ctx = None
+
+    async def __call__(self, scope, receive, send):
+        path: str = scope.get("path", "")
+        if scope.get("type") == "http":
+            if path == "/mcp" or path.startswith("/mcp/"):
+                await self._mcp(scope, receive, send)
+                return
+            if self._sse is not None and (
+                path == "/sse"
+                or path.startswith("/sse/")
+                or path == "/messages"
+                or path.startswith("/messages/")
+            ):
+                await self._sse(scope, receive, send)
+                return
+        await self._quart(scope, receive, send)
+
 
 bp = Blueprint("routes", __name__, static_folder="static", template_folder="static")
 
@@ -74,6 +154,43 @@ def create_app():
             await init_rag_service(app_settings)
         except Exception as e:
             logging.warning(f"RAG service initialization failed (optional): {e}")
+
+        # Initialize Remote MCP Server (non-blocking)
+        try:
+            await init_remote_mcp_server()
+        except Exception as e:
+            logging.warning(f"Remote MCP server initialization failed (optional): {e}")
+            return
+
+        # Bootstrap the FastMCP Starlette lifespan so that the
+        # StreamableHTTPSessionManager's anyio task group is started.
+        # This must happen AFTER the _MCPASGIDispatch middleware is installed.
+        try:
+            dispatch = getattr(app, "_mcp_dispatch", None)
+            if dispatch is not None:
+                await dispatch.bootstrap_lifespan()
+        except Exception as e:
+            logging.exception("FastMCP lifespan bootstrap failed")
+
+        # Log all endpoints together so they are easy to find in the console
+        web_url = "http://127.0.0.1:8081"
+        print(f"\n{'=' * 60}")
+        print(f"  Web UI endpoint:       {web_url}")
+        if remote_mcp_server is not None:
+            cfg = app_settings.remote_mcp_server
+            mcp_path = cfg.server_path or "/mcp"
+            mcp_url = cfg.server_url or f"{web_url}{mcp_path}"
+            print(f"  Remote MCP endpoint:   {mcp_url}")
+        print(f"{'=' * 60}\n")
+
+    @app.after_serving
+    async def shutdown():
+        dispatch = getattr(app, "_mcp_dispatch", None)
+        if dispatch is not None:
+            try:
+                await dispatch.shutdown_lifespan()
+            except Exception as e:
+                logging.warning(f"FastMCP lifespan shutdown failed: {e}")
     
     return app
 
@@ -126,6 +243,9 @@ frontend_settings = {
 # MCP Server Manager
 mcp_manager = MCPServerManager()
 mcp_tools_initialized = False
+
+# Remote MCP Server (Streamable HTTP + Entra ID auth)
+remote_mcp_server: RemoteMCPServer = None
 
 # Azure OpenAI Client cache
 azure_openai_client_cache = None
@@ -223,6 +343,49 @@ async def init_mcp_servers():
     except Exception as e:
         logging.exception(f"Failed to initialize MCP servers: {e}")
         raise e
+
+async def init_remote_mcp_server():
+    """Initialize the remote MCP server if enabled in configuration."""
+    global remote_mcp_server
+
+    cfg = app_settings.remote_mcp_server
+    if not cfg or not cfg.server_enabled:
+        logging.info("Remote MCP server is disabled (REMOTE_MCP_SERVER_ENABLED not set)")
+        return
+
+    rag_svc = await get_rag_service()
+    rag_retriever = rag_svc.retriever if rag_svc else None
+
+    citation_resolver = None
+    if app_settings.citation_file:
+        citation_resolver = CitationLinkResolver(app_settings.citation_file)
+
+    remote_mcp_server = RemoteMCPServer(
+        app_settings=app_settings,
+        mcp_manager=mcp_manager,
+        rag_retriever=rag_retriever,
+        citation_resolver=citation_resolver,
+    )
+    await remote_mcp_server.initialize()
+
+    # Mount the FastMCP Starlette ASGI app at /mcp via ASGI middleware dispatch.
+    # This replaces the Quart route handlers for POST/GET/DELETE /mcp so that
+    # FastMCP's streaming SSE transport can own the full ASGI lifecycle for
+    # those paths (Quart route handlers cannot stream SSE reliably).
+    from quart import current_app as _cur_app
+    _app_obj = _cur_app._get_current_object()
+    mcp_asgi = remote_mcp_server.get_asgi_app(base_path="/mcp")
+    sse_asgi = remote_mcp_server.get_sse_asgi_app()  # backward-compat /sse + /messages
+    dispatch = _MCPASGIDispatch(_app_obj.asgi_app, mcp_asgi, sse_asgi=sse_asgi)
+    _app_obj.asgi_app = dispatch
+    # Store reference so before_serving can call bootstrap_lifespan() on it
+    _app_obj._mcp_dispatch = dispatch
+
+    logging.info(
+        "Remote MCP server initialized on path %s",
+        cfg.server_path or "/mcp",
+    )
+
 
 async def init_cosmosdb_client():
     cosmos_conversation_client = None
@@ -1901,5 +2064,38 @@ def storageSas():
         details = jsonify({"error": str(e)})
         logging.exception("Exception in /storageSas: ", details)
         return details, 500
+
+# ---------------------------------------------------------------------------
+# Protected Resource Metadata endpoint (RFC 9728)
+# MCP clients fetch this to discover the Entra ID authorization server and
+# available OAuth scopes.  Must be accessible WITHOUT authentication.
+# ---------------------------------------------------------------------------
+
+@bp.route("/.well-known/oauth-protected-resource", methods=["GET"])
+async def oauth_protected_resource():
+    """Serve OAuth 2.0 Protected Resource Metadata per RFC 9728."""
+    if not remote_mcp_server:
+        return jsonify({"error": "Remote MCP server not initialized"}), 503
+
+    metadata = remote_mcp_server.get_prm_metadata()
+    if not metadata:
+        return jsonify({"error": "Remote MCP server auth is not configured"}), 503
+
+    response = await make_response(jsonify(metadata))
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response, 200
+
+
+# ---------------------------------------------------------------------------
+# MCP Streamable HTTP transport
+#
+# POST/GET/DELETE /mcp are handled by FastMCP's Starlette ASGI app, which is
+# mounted in the ASGI middleware layer (see _MCPASGIDispatch and
+# init_remote_mcp_server).  The Quart Blueprint does NOT handle these routes
+# directly so that streaming (SSE) and full MCP protocol negotiation work
+# correctly with FastMCP's transport layer.
+# ---------------------------------------------------------------------------
+
 
 app = create_app()

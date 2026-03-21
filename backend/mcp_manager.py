@@ -323,7 +323,28 @@ class MCPServerManager:
         return response.text
 
     def get_tools(self) -> List[Dict[str, Any]]:
-        """Get all registered tools"""
+        """Get all registered tools in OpenAI function-calling format."""
+        return self.tools.copy()
+
+    def get_tool_definitions(self) -> List[Dict[str, Any]]:
+        """
+        Return all registered tool schemas in OpenAI function-calling format.
+
+        Each item is a dict with shape::
+
+            {
+                "type": "function",
+                "function": {
+                    "name": "<tool_name>",
+                    "description": "<description>",
+                    "parameters": { ... JSON Schema ... }
+                }
+            }
+
+        This is the same data returned by :meth:`get_tools` and is provided
+        as a clearly-named alias for use by the remote MCP server when
+        re-exporting managed tools as FastMCP tool registrations.
+        """
         return self.tools.copy()
 
     def get_available_tool_names(self) -> List[str]:
@@ -333,3 +354,4 @@ class MCPServerManager:
     def is_tool_available(self, tool_name: str) -> bool:
         """Check if a tool is available"""
         return tool_name in self.available_tools
+

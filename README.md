@@ -138,18 +138,18 @@ Note: RBAC assignments can take a few minutes before becoming effective.
 #### Basic Chat Experience
 1. Copy `.env.sample` to a new file called `.env` and configure the settings as described in the table below.
 
-    | App Setting | Required? | Default Value | Note |
-    | --- | --- | --- | ------------- |
-    |AZURE_OPENAI_RESOURCE| Only if `AZURE_OPENAI_ENDPOINT` is not set || The name of your Azure OpenAI resource (only one of AZURE_OPENAI_RESOURCE/AZURE_OPENAI_ENDPOINT is required)|
-    |AZURE_OPENAI_ENDPOINT| Only if `AZURE_OPENAI_RESOURCE` is not set ||The endpoint of your Azure OpenAI resource (only one of AZURE_OPENAI_RESOURCE/AZURE_OPENAI_ENDPOINT is required)|
-    |AZURE_OPENAI_MODEL|Yes||The name of your model deployment|
-    |AZURE_OPENAI_KEY|Optional if using Microsoft Entra ID -- see our documentation on the required resource setup for identity-based authentication.||One of the API keys of your Azure OpenAI resource|
-    |AZURE_OPENAI_TEMPERATURE|No|0|What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic. A value of 0 is recommended when using your data.|
-    |AZURE_OPENAI_TOP_P|No|1.0|An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. We recommend setting this to 1.0 when using your data.|
-    |AZURE_OPENAI_MAX_TOKENS|No|1000|The maximum number of tokens allowed for the generated answer.|
-    |AZURE_OPENAI_STOP_SEQUENCE|No||Up to 4 sequences where the API will stop generating further tokens. Represent these as a string joined with "|", e.g. `"stop1|stop2|stop3"`|
-    |AZURE_OPENAI_SYSTEM_MESSAGE|No|You are an AI assistant that helps people find information.|A brief description of the role and tone the model should use|
-    |AZURE_OPENAI_STREAM|No|True|Whether or not to use streaming for the response. Note: Setting this to true prevents the use of prompt flow.|
+| App Setting                 | Required?     | Default Value        | Note   |
+| -------- | -------- | -------- | --------------------------------- |
+| AZURE_OPENAI_RESOURCE       | Only if `AZURE_OPENAI_ENDPOINT` is not set |  | The name of your Azure OpenAI resource (only one of AZURE_OPENAI_RESOURCE/AZURE_OPENAI_ENDPOINT is required) |
+| AZURE_OPENAI_ENDPOINT       | Only if `AZURE_OPENAI_RESOURCE` is not set |  | The endpoint of your Azure OpenAI resource (only one of AZURE_OPENAI_RESOURCE/AZURE_OPENAI_ENDPOINT is required) |
+| AZURE_OPENAI_MODEL          | Yes |  | The name of your model deployment     |
+| AZURE_OPENAI_KEY            | Optional if using Microsoft Entra ID -- see our documentation on the required resource setup for identity-based authentication. |  | One of the API keys of your Azure OpenAI resource |
+| AZURE_OPENAI_TEMPERATURE    | No | 0 | What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic. A value of 0 is recommended when using your data. |
+| AZURE_OPENAI_TOP_P          | No | 1.0 | An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. We recommend setting this to 1.0 when using your data. |
+| AZURE_OPENAI_MAX_TOKENS     | No | 1000 | The maximum number of tokens allowed for the generated answer. |
+| AZURE_OPENAI_STOP_SEQUENCE  | No |  | Up to 4 sequences where the API will stop generating further tokens. Represent these as a string joined with " | ", e.g. `"stop1 | stop2 | stop3"` |
+| AZURE_OPENAI_SYSTEM_MESSAGE | No | You are an AI assistant that helps people find information. | A brief description of the role and tone the model should use |
+| AZURE_OPENAI_STREAM         | No | True | Whether or not to use streaming for the response. Note: Setting this to true prevents the use of prompt flow. |
     |AZURE_OPENAI_EMBEDDING_NAME|Only if using vector search using an Azure OpenAI embedding model||The name of your embedding model deployment if using vector search.
 
     See the [documentation](https://learn.microsoft.com/en-us/azure/cognitive-services/openai/reference#example-response-2) for more information on these parameters.
@@ -167,24 +167,24 @@ Note: RBAC assignments can take a few minutes before becoming effective.
 
 3. Configure data source settings as described in the table below.
 
-    | App Setting | Required? | Default Value | Note |
-    | --- | --- | --- | ------------- |
-    |DATASOURCE_TYPE|Yes||Must be set to `AzureCognitiveSearch`|
-    |AZURE_SEARCH_SERVICE|Yes||The name of your Azure AI Search resource|
-    |AZURE_SEARCH_INDEX|Yes||The name of your Azure AI Search Index|
-    |AZURE_SEARCH_KEY|Optional if using Microsoft Entra ID -- see our documentation on the required resource setup for identity-based authentication.||An **admin key** for your Azure AI Search resource.|
-    |AZURE_SEARCH_USE_SEMANTIC_SEARCH|No|False|Whether or not to use semantic search|
-    |AZURE_SEARCH_QUERY_TYPE|No|simple|Query type: simple, semantic, vector, vectorSimpleHybrid, or vectorSemanticHybrid. Takes precedence over AZURE_SEARCH_USE_SEMANTIC_SEARCH|
-    |AZURE_SEARCH_SEMANTIC_SEARCH_CONFIG|No||The name of the semantic search configuration to use if using semantic search.|
-    |AZURE_SEARCH_TOP_K|No|5|The number of documents to retrieve when querying your search index.|
-    |AZURE_SEARCH_ENABLE_IN_DOMAIN|No|True|Limits responses to only queries relating to your data.|
-    |AZURE_SEARCH_STRICTNESS|No|3|Integer from 1 to 5 specifying the strictness for the model limiting responses to your data.|
-    |AZURE_SEARCH_CONTENT_COLUMNS|No||List of fields in your search index that contains the text content of your documents to use when formulating a bot response. Represent these as a string joined with "|", e.g. `"product_description|product_manual"`|
-    |AZURE_SEARCH_FILENAME_COLUMN|No|| Field from your search index that gives a unique identifier of the source of your data to display in the UI.|
-    |AZURE_SEARCH_TITLE_COLUMN|No||Field from your search index that gives a relevant title or header for your data content to display in the UI.|
-    |AZURE_SEARCH_URL_COLUMN|No||Field from your search index that contains a URL for the document, e.g. an Azure Blob Storage URI. This value is not currently used.|
-    |AZURE_SEARCH_VECTOR_COLUMNS|No||List of fields in your search index that contain vector embeddings of your documents to use when formulating a bot response. Represent these as a string joined with "|", e.g. `"product_description|product_manual"`|
-    |AZURE_SEARCH_PERMITTED_GROUPS_COLUMN|No||Field from your Azure AI Search index that contains AAD group IDs that determine document-level access control.|
+| App Setting                          | Required?  | Default Value   | Note |
+| -------- | -------- | -------- | ----------------------------------- |
+| DATASOURCE_TYPE                      | Yes |  | Must be set to `AzureCognitiveSearch` |
+| AZURE_SEARCH_SERVICE                 | Yes |  | The name of your Azure AI Search resource |
+| AZURE_SEARCH_INDEX                   | Yes |  | The name of your Azure AI Search Index |
+| AZURE_SEARCH_KEY                     | Optional if using Microsoft Entra ID -- see our documentation on the required resource setup for identity-based authentication. |  | An **admin key** for your Azure AI Search resource. |
+| AZURE_SEARCH_USE_SEMANTIC_SEARCH     | No | False | Whether or not to use semantic search |
+| AZURE_SEARCH_QUERY_TYPE              | No | simple | Query type: simple, semantic, vector, vectorSimpleHybrid, or vectorSemanticHybrid. Takes precedence over AZURE_SEARCH_USE_SEMANTIC_SEARCH |
+| AZURE_SEARCH_SEMANTIC_SEARCH_CONFIG  | No |  | The name of the semantic search configuration to use if using semantic search. |
+| AZURE_SEARCH_TOP_K                   | No | 5 | The number of documents to retrieve when querying your search index. |
+| AZURE_SEARCH_ENABLE_IN_DOMAIN        | No | True | Limits responses to only queries relating to your data. |
+| AZURE_SEARCH_STRICTNESS              | No | 3 | Integer from 1 to 5 specifying the strictness for the model limiting responses to your data. |
+| AZURE_SEARCH_CONTENT_COLUMNS         | No |  | List of fields in your search index that contains the text content of your documents to use when formulating a bot response. Represent these as a string joined with " | ", e.g. `"product_description | product_manual"` |
+| AZURE_SEARCH_FILENAME_COLUMN         | No |  | Field from your search index that gives a unique identifier of the source of your data to display in the UI. |
+| AZURE_SEARCH_TITLE_COLUMN            | No |  | Field from your search index that gives a relevant title or header for your data content to display in the UI. |
+| AZURE_SEARCH_URL_COLUMN              | No |  | Field from your search index that contains a URL for the document, e.g. an Azure Blob Storage URI. This value is not currently used. |
+| AZURE_SEARCH_VECTOR_COLUMNS          | No |  | List of fields in your search index that contain vector embeddings of your documents to use when formulating a bot response. Represent these as a string joined with " | ", e.g. `"product_description | product_manual"` |
+| AZURE_SEARCH_PERMITTED_GROUPS_COLUMN | No |  | Field from your Azure AI Search index that contains AAD group IDs that determine document-level access control. |
 
     When using your own data with a vector index, ensure these settings are configured on your app:
     - `AZURE_SEARCH_QUERY_TYPE`: can be `vector`, `vectorSimpleHybrid`, or `vectorSemanticHybrid`,
@@ -199,21 +199,21 @@ Note: RBAC assignments can take a few minutes before becoming effective.
 
 3. Configure data source settings as described in the table below.
 
-    | App Setting | Required? | Default Value | Note |
-    | --- | --- | --- | ------------- |
-    |DATASOURCE_TYPE|Yes||Must be set to `AzureCosmosDB`|
-    |AZURE_COSMOSDB_MONGO_VCORE_CONNECTION_STRING|Yes||The connection string used to connect to your Azure Cosmos DB instance|
-    |AZURE_COSMOSDB_MONGO_VCORE_INDEX|Yes||The name of your Azure Cosmos DB vector index|
-    |AZURE_COSMOSDB_MONGO_VCORE_DATABASE|Yes||The name of your Azure Cosmos DB database|
-    |AZURE_COSMOSDB_MONGO_VCORE_CONTAINER|Yes||The name of your Azure Cosmos DB container|
-    |AZURE_COSMOSDB_MONGO_VCORE_TOP_K|No|5|The number of documents to retrieve when querying your search index.|
-    |AZURE_COSMOSDB_MONGO_VCORE_ENABLE_IN_DOMAIN|No|True|Limits responses to only queries relating to your data.|
-    |AZURE_COSMOSDB_MONGO_VCORE_STRICTNESS|No|3|Integer from 1 to 5 specifying the strictness for the model limiting responses to your data.|
-    |AZURE_COSMOSDB_MONGO_VCORE_CONTENT_COLUMNS|No||List of fields in your search index that contains the text content of your documents to use when formulating a bot response. Represent these as a string joined with "|", e.g. `"product_description|product_manual"`|
-    |AZURE_COSMOSDB_MONGO_VCORE_FILENAME_COLUMN|No|| Field from your search index that gives a unique identifier of the source of your data to display in the UI.|
-    |AZURE_COSMOSDB_MONGO_VCORE_TITLE_COLUMN|No||Field from your search index that gives a relevant title or header for your data content to display in the UI.|
-    |AZURE_COSMOSDB_MONGO_VCORE_URL_COLUMN|No||Field from your search index that contains a URL for the document, e.g. an Azure Blob Storage URI. This value is not currently used.|
-    |AZURE_COSMOSDB_MONGO_VCORE_VECTOR_COLUMNS|No||List of fields in your search index that contain vector embeddings of your documents to use when formulating a bot response. Represent these as a string joined with "|", e.g. `"product_description|product_manual"`|
+| App Setting                                  | Required? | Default Value | Note |
+| -------- | -------- | -------- | ------------------------------------- |
+| DATASOURCE_TYPE                              | Yes       |               | Must be set to `AzureCosmosDB` |
+| AZURE_COSMOSDB_MONGO_VCORE_CONNECTION_STRING | Yes       |               | The connection string used to connect to your Azure Cosmos DB instance |
+| AZURE_COSMOSDB_MONGO_VCORE_INDEX             | Yes       |               | The name of your Azure Cosmos DB vector index |
+| AZURE_COSMOSDB_MONGO_VCORE_DATABASE          | Yes       |               | The name of your Azure Cosmos DB database |
+| AZURE_COSMOSDB_MONGO_VCORE_CONTAINER         | Yes       |               | The name of your Azure Cosmos DB container |
+| AZURE_COSMOSDB_MONGO_VCORE_TOP_K             | No        | 5             | The number of documents to retrieve when querying your search index. |
+| AZURE_COSMOSDB_MONGO_VCORE_ENABLE_IN_DOMAIN  | No        | True          | Limits responses to only queries relating to your data. |
+| AZURE_COSMOSDB_MONGO_VCORE_STRICTNESS        | No        | 3             | Integer from 1 to 5 specifying the strictness for the model limiting responses to your data. |
+| AZURE_COSMOSDB_MONGO_VCORE_CONTENT_COLUMNS   | No        |               | List of fields in your search index that contains the text content of your documents to use when formulating a bot response. Represent these as a string joined with " | ", e.g. `"product_description | product_manual"` |
+| AZURE_COSMOSDB_MONGO_VCORE_FILENAME_COLUMN   | No        |               | Field from your search index that gives a unique identifier of the source of your data to display in the UI. |
+| AZURE_COSMOSDB_MONGO_VCORE_TITLE_COLUMN      | No        |               | Field from your search index that gives a relevant title or header for your data content to display in the UI. |
+| AZURE_COSMOSDB_MONGO_VCORE_URL_COLUMN        | No        |               | Field from your search index that contains a URL for the document, e.g. an Azure Blob Storage URI. This value is not currently used. |
+| AZURE_COSMOSDB_MONGO_VCORE_VECTOR_COLUMNS    | No        |               | List of fields in your search index that contain vector embeddings of your documents to use when formulating a bot response. Represent these as a string joined with " | ", e.g. `"product_description | product_manual"` |
 
     Azure Cosmos DB uses vector search by default, so ensure these settings are configured on your app:
     - `AZURE_OPENAI_EMBEDDING_NAME`: the name of your Ada (text-embedding-ada-002) model deployment on your Azure OpenAI resource.
@@ -227,22 +227,22 @@ Note: RBAC assignments can take a few minutes before becoming effective.
 
 3. Configure data source settings as described in the table below.
 
-    | App Setting | Required? | Default Value | Note |
-    | --- | --- | --- | ------------- |
-    |DATASOURCE_TYPE|Yes||Must be set to `Elasticsearch`|
-    |ELASTICSEARCH_ENDPOINT|Yes||The base URL of your Elasticsearch cluster API|
-    |ELASTICSEARCH_ENCODED_API_KEY|Yes||The encoded API key for your user identity on your Elasticsearch cluster|
-    |ELASTICSEARCH_INDEX|Yes||The name of your Elasticsearch index|
-    |ELASTICSEARCH_QUERY_TYPE|No|simple|Can be one of `simple` or `vector`|
-    |ELASTICSEARCH_EMBEDDING_MODEL_ID|Only if using vector search with an Elasticsearch embedding model||The name of the embedding model deployed to your Elasticsearch cluster which was used to produce embeddings for your index|
-    |ELASTICSEARCH_TOP_K|No|5|The number of documents to retrieve when querying your search index.|
-    |ELASTICSEARCH_ENABLE_IN_DOMAIN|No|True|Limits responses to only queries relating to your data.|
-    |ELASTICSEARCH_STRICTNESS|No|3|Integer from 1 to 5 specifying the strictness for the model limiting responses to your data.|
-    |ELASTICSEARCH_CONTENT_COLUMNS|No||List of fields in your search index that contains the text content of your documents to use when formulating a bot response. Represent these as a string joined with "|", e.g. `"product_description|product_manual"`|
-    |ELASTICSEARCH_FILENAME_COLUMN|No|| Field from your search index that gives a unique identifier of the source of your data to display in the UI.|
-    |ELASTICSEARCH_TITLE_COLUMN|No||Field from your search index that gives a relevant title or header for your data content to display in the UI.|
-    |ELASTICSEARCH_URL_COLUMN|No||Field from your search index that contains a URL for the document, e.g. an Azure Blob Storage URI. This value is not currently used.|
-    |ELASTICSEARCH_VECTOR_COLUMNS|No||List of fields in your search index that contain vector embeddings of your documents to use when formulating a bot response. Represent these as a string joined with "|", e.g. `"product_description|product_manual"`|
+| App Setting                      | Required?    | Default Value     | Note  |
+| -------- | -------- | -------- | ------------------------------------ |
+| DATASOURCE_TYPE                  | Yes |  | Must be set to `Elasticsearch`   |
+| ELASTICSEARCH_ENDPOINT           | Yes |  | The base URL of your Elasticsearch cluster API |
+| ELASTICSEARCH_ENCODED_API_KEY    | Yes |  | The encoded API key for your user identity on your Elasticsearch cluster |
+| ELASTICSEARCH_INDEX              | Yes |  | The name of your Elasticsearch index |
+| ELASTICSEARCH_QUERY_TYPE         | No | simple | Can be one of `simple` or `vector` |
+| ELASTICSEARCH_EMBEDDING_MODEL_ID | Only if using vector search with an Elasticsearch embedding model |  | The name of the embedding model deployed to your Elasticsearch cluster which was used to produce embeddings for your index |
+| ELASTICSEARCH_TOP_K              | No | 5 | The number of documents to retrieve when querying your search index. |
+| ELASTICSEARCH_ENABLE_IN_DOMAIN   | No | True | Limits responses to only queries relating to your data. |
+| ELASTICSEARCH_STRICTNESS         | No | 3 | Integer from 1 to 5 specifying the strictness for the model limiting responses to your data. |
+| ELASTICSEARCH_CONTENT_COLUMNS    | No |  | List of fields in your search index that contains the text content of your documents to use when formulating a bot response. Represent these as a string joined with " | ", e.g. `"product_description | product_manual"` |
+| ELASTICSEARCH_FILENAME_COLUMN    | No |  | Field from your search index that gives a unique identifier of the source of your data to display in the UI. |
+| ELASTICSEARCH_TITLE_COLUMN       | No |  | Field from your search index that gives a relevant title or header for your data content to display in the UI. |
+| ELASTICSEARCH_URL_COLUMN         | No |  | Field from your search index that contains a URL for the document, e.g. an Azure Blob Storage URI. This value is not currently used. |
+| ELASTICSEARCH_VECTOR_COLUMNS     | No |  | List of fields in your search index that contain vector embeddings of your documents to use when formulating a bot response. Represent these as a string joined with " | ", e.g. `"product_description | product_manual"` |
 
     To use vector search with Elasticsearch, there are two options:
 
@@ -262,20 +262,20 @@ Note: RBAC assignments can take a few minutes before becoming effective.
 
 3. Configure data source settings as described in the table below.
 
-    | App Setting | Required? | Default Value | Note |
-    | --- | --- | --- | ------------- |
-    |DATASOURCE_TYPE|Yes||Must be set to `Pinecone`|
-    |PINECONE_ENVIRONMENT|Yes||The name of your Pinecone environment|
-    |PINECONE_INDEX_NAME|Yes||The name of your Pinecone index|
-    |PINECONE_API_KEY|Yes||The API key used to connect to your Pinecone instance|
-    |PINECONE_TOP_K|No|5|The number of documents to retrieve when querying your search index.|
-    |PINECONE_ENABLE_IN_DOMAIN|No|True|Limits responses to only queries relating to your data.|
-    |PINECONE_STRICTNESS|No|3|Integer from 1 to 5 specifying the strictness for the model limiting responses to your data.|
-    |PINECONE_CONTENT_COLUMNS|No||List of fields in your search index that contains the text content of your documents to use when formulating a bot response. Represent these as a string joined with "|", e.g. `"product_description|product_manual"`|
-    |PINECONE_FILENAME_COLUMN|No|| Field from your search index that gives a unique identifier of the source of your data to display in the UI.|
-    |PINECONE_TITLE_COLUMN|No||Field from your search index that gives a relevant title or header for your data content to display in the UI.|
-    |PINECONE_URL_COLUMN|No||Field from your search index that contains a URL for the document, e.g. an Azure Blob Storage URI. This value is not currently used.|
-    |PINECONE_VECTOR_COLUMNS|No||List of fields in your search index that contain vector embeddings of your documents to use when formulating a bot response. Represent these as a string joined with "|", e.g. `"product_description|product_manual"`|
+| App Setting               | Required? | Default Value | Note                 |
+| -------- | -------- | -------- | ------------------------------------- |
+| DATASOURCE_TYPE           | Yes       |               | Must be set to `Pinecone` |
+| PINECONE_ENVIRONMENT      | Yes       |               | The name of your Pinecone environment |
+| PINECONE_INDEX_NAME       | Yes       |               | The name of your Pinecone index |
+| PINECONE_API_KEY          | Yes       |               | The API key used to connect to your Pinecone instance |
+| PINECONE_TOP_K            | No        | 5             | The number of documents to retrieve when querying your search index. |
+| PINECONE_ENABLE_IN_DOMAIN | No        | True          | Limits responses to only queries relating to your data. |
+| PINECONE_STRICTNESS       | No        | 3             | Integer from 1 to 5 specifying the strictness for the model limiting responses to your data. |
+| PINECONE_CONTENT_COLUMNS  | No        |               | List of fields in your search index that contains the text content of your documents to use when formulating a bot response. Represent these as a string joined with " | ", e.g. `"product_description | product_manual"` |
+| PINECONE_FILENAME_COLUMN  | No        |               | Field from your search index that gives a unique identifier of the source of your data to display in the UI. |
+| PINECONE_TITLE_COLUMN     | No        |               | Field from your search index that gives a relevant title or header for your data content to display in the UI. |
+| PINECONE_URL_COLUMN       | No        |               | Field from your search index that contains a URL for the document, e.g. an Azure Blob Storage URI. This value is not currently used. |
+| PINECONE_VECTOR_COLUMNS   | No        |               | List of fields in your search index that contain vector embeddings of your documents to use when formulating a bot response. Represent these as a string joined with " | ", e.g. `"product_description | product_manual"` |
 
     Pinecone uses vector search by default, so ensure these settings are configured on your app:
     - `AZURE_OPENAI_EMBEDDING_NAME`: the name of your Ada (text-embedding-ada-002) model deployment on your Azure OpenAI resource.
@@ -289,21 +289,21 @@ Note: RBAC assignments can take a few minutes before becoming effective.
 
 3. Configure data source settings as described in the table below.
 
-    | App Setting | Required? | Default Value | Note |
-    | --- | --- | --- | ------------- |
-    |DATASOURCE_TYPE|Yes||Must be set to `MongoDB`|
-    |MONGODB_CONNECTION_STRING|Yes||The connection string used to connect to your Mongo DB instance|
-    |MONGODB_VECTOR_INDEX|Yes||The name of your Mongo DB vector index|
-    |MONGODB_DATABASE_NAME|Yes||The name of your Mongo DB database|
-    |MONGODB_CONTAINER_NAME|Yes||The name of your Mongo DB container|
-    |MONGODB_TOP_K|No|5|The number of documents to retrieve when querying your search index.|
-    |MONGODB_ENABLE_IN_DOMAIN|No|True|Limits responses to only queries relating to your data.|
-    |MONGODB_STRICTNESS|No|3|Integer from 1 to 5 specifying the strictness for the model limiting responses to your data.|
-    |MONGODB_CONTENT_COLUMNS|No||List of fields in your search index that contains the text content of your documents to use when formulating a bot response. Represent these as a string joined with "|", e.g. `"product_description|product_manual"`|
-    |MONGODB_FILENAME_COLUMN|No|| Field from your search index that gives a unique identifier of the source of your data to display in the UI.|
-    |MONGODB_TITLE_COLUMN|No||Field from your search index that gives a relevant title or header for your data content to display in the UI.|
-    |MONGODB_URL_COLUMN|No||Field from your search index that contains a URL for the document, e.g. an Azure Blob Storage URI. This value is not currently used.|
-    |MONGODB_VECTOR_COLUMNS|No||List of fields in your search index that contain vector embeddings of your documents to use when formulating a bot response. Represent these as a string joined with "|", e.g. `"product_description|product_manual"`|
+| App Setting               | Required? | Default Value | Note                 |
+| -------- | -------- | -------- | ------------------------------------- |
+| DATASOURCE_TYPE           | Yes       |               | Must be set to `MongoDB` |
+| MONGODB_CONNECTION_STRING | Yes       |               | The connection string used to connect to your Mongo DB instance |
+| MONGODB_VECTOR_INDEX      | Yes       |               | The name of your Mongo DB vector index |
+| MONGODB_DATABASE_NAME     | Yes       |               | The name of your Mongo DB database |
+| MONGODB_CONTAINER_NAME    | Yes       |               | The name of your Mongo DB container |
+| MONGODB_TOP_K             | No        | 5             | The number of documents to retrieve when querying your search index. |
+| MONGODB_ENABLE_IN_DOMAIN  | No        | True          | Limits responses to only queries relating to your data. |
+| MONGODB_STRICTNESS        | No        | 3             | Integer from 1 to 5 specifying the strictness for the model limiting responses to your data. |
+| MONGODB_CONTENT_COLUMNS   | No        |               | List of fields in your search index that contains the text content of your documents to use when formulating a bot response. Represent these as a string joined with " | ", e.g. `"product_description | product_manual"` |
+| MONGODB_FILENAME_COLUMN   | No        |               | Field from your search index that gives a unique identifier of the source of your data to display in the UI. |
+| MONGODB_TITLE_COLUMN      | No        |               | Field from your search index that gives a relevant title or header for your data content to display in the UI. |
+| MONGODB_URL_COLUMN        | No        |               | Field from your search index that contains a URL for the document, e.g. an Azure Blob Storage URI. This value is not currently used. |
+| MONGODB_VECTOR_COLUMNS    | No        |               | List of fields in your search index that contain vector embeddings of your documents to use when formulating a bot response. Represent these as a string joined with " | ", e.g. `"product_description | product_manual"` |
 
     MongoDB uses vector search by default, so ensure these settings are configured on your app:
     - `AZURE_OPENAI_EMBEDDING_NAME`: the name of your Ada (text-embedding-ada-002) model deployment on your Azure OpenAI resource.
@@ -317,28 +317,28 @@ Note: RBAC assignments can take a few minutes before becoming effective.
 
 3. Configure data source settings as described in the table below.
 
-    | App Setting | Required? | Default Value | Note |
-    | --- | --- | --- | ------------- |
-    |DATASOURCE_TYPE|Yes||Must be set to `AzureSqlServer`|
-    |AZURE_SQL_SERVER_CONNECTION_STRING|Yes||The connection string to use to connect to your Azure SQL Server instance|
-    |AZURE_SQL_SERVER_TABLE_SCHEMA|Yes||The table schema for your Azure SQL Server table.  Must be surrounded by double quotes (`"`).|
-    |AZURE_SQL_SERVER_PORT||Not publicly available at this time.|The port to use to connect to your Azure SQL Server instance.|
-    |AZURE_SQL_SERVER_DATABASE_NAME||Not publicly available at this time.|
-    |AZURE_SQL_SERVER_DATABASE_SERVER||Not publicly available at this time.|
+| App Setting                        | Required? | Default Value      | Note  |
+| --------- | --------- | --------- | --------------------------------------- |
+| DATASOURCE_TYPE                    | Yes       |  | Must be set to `AzureSqlServer` |
+| AZURE_SQL_SERVER_CONNECTION_STRING | Yes       |  | The connection string to use to connect to your Azure SQL Server instance |
+| AZURE_SQL_SERVER_TABLE_SCHEMA      | Yes       |  | The table schema for your Azure SQL Server table.  Must be surrounded by double quotes (`"`). |
+| AZURE_SQL_SERVER_PORT              |           | Not publicly available at this time. | The port to use to connect to your Azure SQL Server instance. |
+| AZURE_SQL_SERVER_DATABASE_NAME     |           | Not publicly available at this time. |
+| AZURE_SQL_SERVER_DATABASE_SERVER   |           | Not publicly available at this time. |
 
 #### Chat with your data using Promptflow
 
 Configure your settings using the table below.
 
-| App Setting | Required? | Default Value | Note |
-| --- | --- | --- | ------------- |
-|USE_PROMPTFLOW|No|False|Use existing Promptflow deployed endpoint. If set to `True` then both `PROMPTFLOW_ENDPOINT` and `PROMPTFLOW_API_KEY` also need to be set.|
-|PROMPTFLOW_ENDPOINT|Only if `USE_PROMPTFLOW` is True||URL of the deployed Promptflow endpoint e.g. https://pf-deployment-name.region.inference.ml.azure.com/score|
-|PROMPTFLOW_API_KEY|Only if `USE_PROMPTFLOW` is True||Auth key for deployed Promptflow endpoint. Note: only Key-based authentication is supported.|
-|PROMPTFLOW_RESPONSE_TIMEOUT|No|120|Timeout value in seconds for the Promptflow endpoint to respond.|
-|PROMPTFLOW_REQUEST_FIELD_NAME|No|query|Default field name to construct Promptflow request. Note: chat_history is auto constucted based on the interaction, if your API expects other mandatory field you will need to change the request parameters under `promptflow_request` function.|
-|PROMPTFLOW_RESPONSE_FIELD_NAME|No|reply|Default field name to process the response from Promptflow request.|
-|PROMPTFLOW_CITATIONS_FIELD_NAME|No|documents|Default field name to process the citations output from Promptflow request.|
+| App Setting                     | Required?                        | Default Value | Note |
+| --------- | --------- | --------- | ---------------------------------------- |
+| USE_PROMPTFLOW                  | No                               | False | Use existing Promptflow deployed endpoint. If set to `True` then both `PROMPTFLOW_ENDPOINT` and `PROMPTFLOW_API_KEY` also need to be set. |
+| PROMPTFLOW_ENDPOINT             | Only if `USE_PROMPTFLOW` is True |  | URL of the deployed Promptflow endpoint e.g. https://pf-deployment-name.region.inference.ml.azure.com/score |
+| PROMPTFLOW_API_KEY              | Only if `USE_PROMPTFLOW` is True |  | Auth key for deployed Promptflow endpoint. Note: only Key-based authentication is supported. |
+| PROMPTFLOW_RESPONSE_TIMEOUT     | No                               | 120 | Timeout value in seconds for the Promptflow endpoint to respond. |
+| PROMPTFLOW_REQUEST_FIELD_NAME   | No                               | query | Default field name to construct Promptflow request. Note: chat_history is auto constucted based on the interaction, if your API expects other mandatory field you will need to change the request parameters under `promptflow_request` function. |
+| PROMPTFLOW_RESPONSE_FIELD_NAME  | No                               | reply | Default field name to process the response from Promptflow request. |
+| PROMPTFLOW_CITATIONS_FIELD_NAME | No                               | documents | Default field name to process the citations output from Promptflow request. |
 
 #### Enable Chat History
 
@@ -350,13 +350,13 @@ Configure your settings using the table below.
 
 4. Configure data source settings as described in the table below.
 
-    | App Setting | Required? | Default Value | Note |
-    | --- | --- | --- | ------------- |
-    |AZURE_COSMOSDB_ACCOUNT|Only if using chat history||The name of the Azure Cosmos DB account used for storing chat history|
-    |AZURE_COSMOSDB_DATABASE|Only if using chat history||The name of the Azure Cosmos DB database used for storing chat history|
-    |AZURE_COSMOSDB_CONVERSATIONS_CONTAINER|Only if using chat history||The name of the Azure Cosmos DB container used for storing chat history|
-    |AZURE_COSMOSDB_ACCOUNT_KEY|Only if using chat history||The account key for the Azure Cosmos DB account used for storing chat history|
-    |AZURE_COSMOSDB_ENABLE_FEEDBACK|No|False|Whether or not to enable message feedback on chat history messages|
+| App Setting                            | Required?                  | Default Value | Note |
+| --------- | --------- | --------- | ---------------------------------------- |
+| AZURE_COSMOSDB_ACCOUNT                 | Only if using chat history |  | The name of the Azure Cosmos DB account used for storing chat history |
+| AZURE_COSMOSDB_DATABASE                | Only if using chat history |  | The name of the Azure Cosmos DB database used for storing chat history |
+| AZURE_COSMOSDB_CONVERSATIONS_CONTAINER | Only if using chat history |  | The name of the Azure Cosmos DB container used for storing chat history |
+| AZURE_COSMOSDB_ACCOUNT_KEY             | Only if using chat history |  | The account key for the Azure Cosmos DB account used for storing chat history |
+| AZURE_COSMOSDB_ENABLE_FEEDBACK         | No                         | False | Whether or not to enable message feedback on chat history messages |
 
 
 #### Enable Azure OpenAI function calling via Azure Functions
@@ -470,13 +470,13 @@ Refer to this article to learn more about [function calling with Azure OpenAI Se
 
 4. Configure data source settings as described in the table below:
 
-    | App Setting | Required? | Default Value | Note |
-    | ----------- | --------- | ------------- | ---- |
-    | AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_ENABLED | No |  |  |
-    | AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_TOOL_BASE_URL | Only if using function calling |  | The base URL of your Azure Function "tool", e.g. [https://<azure-function-name>.azurewebsites.net/api/tool]() |
-    | AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_TOOL_KEY | Only if using function calling |  | The function key used to access the Azure Function "tool" |
-    | AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_TOOLS_BASE_URL | Only if using function calling |  | The base URL of your Azure Function "tools", e.g. [https://<azure-function-name>.azurewebsites.net/api/tools]() |
-    | AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_TOOLS_KEY | Only if using function calling |  | The function key used to access the Azure Function "tools" |
+| App Setting                                               | Required? | Default Value | Note |
+| -------------------- | ---------------- | ------------------------ | ------- |
+| AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_ENABLED        | No         |  |  |
+| AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_TOOL_BASE_URL  | Only if using function calling |  | The base URL of your Azure Function "tool", e.g. [https://<azure-function-name>.azurewebsites.net/api/tool]() |
+| AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_TOOL_KEY       | Only if using function calling |  | The function key used to access the Azure Function "tool" |
+| AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_TOOLS_BASE_URL | Only if using function calling |  | The base URL of your Azure Function "tools", e.g. [https://<azure-function-name>.azurewebsites.net/api/tools]() |
+| AZURE_OPENAI_FUNCTION_CALL_AZURE_FUNCTIONS_TOOLS_KEY      | Only if using function calling |  | The function key used to access the Azure Function "tools" |
 
 
 #### Common Customization Scenarios (e.g. updating the default chat logo and headers)
@@ -484,7 +484,7 @@ Refer to this article to learn more about [function calling with Azure OpenAI Se
 The interface allows for easy adaptation of the UI by modifying certain elements, such as the title and logo, through the use of the following environment variables.
 
 | App Setting | Required? | Default Value | Note |
-|---|---|---|---|
+| ---------- | --------- | --------- | --------- |
 |UI_TITLE|No|Contoso| Chat title (left-top) and page title (HTML)
 |UI_LOGO|No|| Logo (left-top). Defaults to Contoso logo. Configure the URL to your logo image to modify.
 |UI_CHAT_LOGO|No|| Logo (chat window). Defaults to Contoso logo. Configure the URL to your logo image to modify.
@@ -531,6 +531,50 @@ The Citation panel is defined at the end of `frontend/src/pages/chat/Chat.tsx`. 
 ```
 
 ## Best Practices
+
+## Remote MCP Server (Outward-Facing)
+
+The application includes a built-in **remote MCP server** that lets any
+MCP-compatible client (VS Code Copilot, Claude Desktop, custom agents) query
+the same knowledge base and call the same tools as the web chat — protected
+by Microsoft Entra ID (OAuth 2.1).
+
+### Quick setup
+
+1. Register a **server app** and a **client app** in Entra ID
+   ([full guide](docs/Remote-MCP-Server-Setup.md)).
+2. Add to your `.env`:
+
+   ```bash
+   REMOTE_MCP_SERVER_ENABLED=true
+   REMOTE_MCP_SERVER_URL=https://your-app.azurewebsites.net/mcp
+   REMOTE_MCP_AUTH_TENANT_ID=<tenant-id>
+   REMOTE_MCP_AUTH_CLIENT_ID=<server-app-client-id>
+   # Allow VS Code's built-in client ID plus your own client(s):
+   REMOTE_MCP_AUTH_ALLOWED_CLIENT_IDS=aebc6443-996d-45c2-90f0-388ff96faa56
+   ```
+
+3. Connect VS Code Copilot via **MCP: Add Server → HTTP** and point it at
+   `https://your-app.azurewebsites.net/mcp`.
+
+### Exposed tools & resources
+
+| Tool / Resource | Description |
+| --------------- | ----------- |
+| `search_knowledge_base` | Query the Azure AI Search index |
+| `get_system_context` | Read the system message and data source info |
+| All tools from `mcp_servers.json` | SW360, Azure Functions, etc. |
+| `context://system-message` *(resource)* | The assistant persona |
+| `context://knowledge-base-info` *(resource)* | Index & search modes |
+| `search-and-answer` *(prompt)* | Grounded-answer prompt template |
+
+See [docs/Remote-MCP-Server-Setup.md](docs/Remote-MCP-Server-Setup.md) for the full
+Entra ID App Registration walkthrough and VS Code / Claude Desktop connection
+instructions.
+
+---
+
+## Best Practices (original)
 We recommend keeping these best practices in mind:
 
 - Reset the chat session (clear chat) if the user changes any settings. Notify the user that their chat history will be lost.

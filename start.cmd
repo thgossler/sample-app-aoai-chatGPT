@@ -2,9 +2,11 @@
 
 cd /D "%~dp0"
 
-echo.    
-echo Starting backend    
-echo.    
+echo.
+echo Starting backend (including Remote MCP server if enabled)
+echo   App URL:          http://127.0.0.1:8081
+echo   MCP endpoint:     http://127.0.0.1:8081/mcp  (if REMOTE_MCP_SERVER_ENABLED=true)
+echo.
 dotenv
 start http://127.0.0.1:8081
 call python -m uvicorn app:app  --port 8081 --reload

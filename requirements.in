@@ -12,3 +12,5 @@ gunicorn
 pydantic-settings
 fastmcp
 requests
+PyJWT[crypto]>=2.8
+cachetools>=5.3

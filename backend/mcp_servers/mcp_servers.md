@@ -233,6 +233,60 @@ if __name__ == "__main__":
 
 3. **Restart the application** - the new tools will be available as `custom_hello_world`
 
+---
+
+## Remote MCP Server (Outward-Facing Streamable HTTP Endpoint)
+
+In addition to *consuming* external MCP servers via `mcp_servers.json`, the chat
+application can also **expose itself as an MCP server** so that MCP-compatible
+clients (VS Code Copilot, Claude Desktop, custom agents) can call into it.
+
+This is a separate feature from the `mcp_servers.json` configuration. It is
+controlled entirely via environment variables (no entry in `mcp_servers.json`
+is needed).
+
+### What Is Exposed
+
+| Tool | Description |
+| ---- | ----------- |
+| `search_knowledge_base` | Query the configured Azure AI Search index |
+| `get_system_context` | Return the system message and data source info |
+| All tools in `mcp_servers.json` | Re-exported as remote MCP tools |
+
+Resources exposed:
+- `context://system-message`
+- `context://knowledge-base-info`
+- `context://citation-config`
+
+Prompt templates:
+- `search-and-answer`
+- `summarize-document`
+
+### Endpoints
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| `GET` | `/.well-known/oauth-protected-resource` | RFC 9728 discovery (no auth required) |
+| `POST` | `/mcp` | MCP Streamable HTTP — client-to-server messages |
+| `GET` | `/mcp` | MCP Streamable HTTP — server-to-client SSE stream |
+| `DELETE` | `/mcp` | MCP Streamable HTTP — session teardown |
+| `OPTIONS` | `/mcp` | CORS preflight |
+
+### Quick-Start Environment Variables
+
+```bash
+REMOTE_MCP_SERVER_ENABLED=true
+REMOTE_MCP_SERVER_URL=https://your-app.azurewebsites.net/mcp
+REMOTE_MCP_AUTH_TENANT_ID=<your-entra-tenant-id>
+REMOTE_MCP_AUTH_CLIENT_ID=<your-server-app-registration-client-id>
+REMOTE_MCP_AUTH_ALLOWED_CLIENT_IDS=aebc6443-996d-45c2-90f0-388ff96faa56
+```
+
+See [docs/Remote-MCP-Server-Setup.md](../../docs/Remote-MCP-Server-Setup.md) for the full
+Entra ID App Registration walkthrough.
+
+---
+
 ## Troubleshooting
 
 ### Common Issues

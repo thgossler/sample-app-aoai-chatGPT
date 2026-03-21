@@ -302,7 +302,7 @@ class RAGService:
 
 User Query: {query}
 
-Please answer based on the retrieved information above and your knowledge as the D&A Software Architecture Assistant."""
+Please answer based on the retrieved information above and your knowledge as the assistant."""
         
         return formatted_prompt
     
