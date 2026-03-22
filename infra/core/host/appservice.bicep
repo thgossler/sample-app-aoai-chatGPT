@@ -99,6 +99,9 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
         requireAuthentication: true
         unauthenticatedClientAction: 'RedirectToLoginPage'
         redirectToProvider: 'azureactivedirectory'
+        excludedPaths: [
+          '/.well-known/*'
+        ]
       }
       identityProviders: {
         azureActiveDirectory: {

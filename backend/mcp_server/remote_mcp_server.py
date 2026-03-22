@@ -108,14 +108,37 @@ class _MCPAuthStarletteMiddleware(BaseHTTPMiddleware):
         app,
         validator: Optional[EntraIDTokenValidator] = None,
         server_url: str = "",
+        prm_metadata_getter=None,
     ):
         super().__init__(app)
         self._validator = validator
         self._server_url = server_url
+        self._prm_metadata_getter = prm_metadata_getter
 
     async def dispatch(
         self, request: StarletteRequest, call_next
     ):
+        # Serve Protected Resource Metadata (RFC 9728) without auth so that
+        # MCP clients can discover the authorization server before they have
+        # a token.  This also handles the case where Azure App Service
+        # EasyAuth blocks the root-level /.well-known endpoint.
+        if request.url.path.rstrip("/").endswith(
+            "/.well-known/oauth-protected-resource"
+        ):
+            if self._prm_metadata_getter:
+                metadata = self._prm_metadata_getter()
+                if metadata:
+                    return JSONResponse(
+                        metadata,
+                        headers={
+                            "Cache-Control": "public, max-age=3600",
+                            "Access-Control-Allow-Origin": "*",
+                        },
+                    )
+            return JSONResponse(
+                {"error": "Auth not configured"}, status_code=503
+            )
+
         if self._validator is None:
             return await call_next(request)
 
@@ -670,6 +693,7 @@ class RemoteMCPServer:
                     _MCPAuthStarletteMiddleware,
                     validator=self._validator,
                     server_url=server_url,
+                    prm_metadata_getter=self.get_prm_metadata,
                 )
             )
         else:
@@ -713,6 +737,7 @@ class RemoteMCPServer:
                     _MCPAuthStarletteMiddleware,
                     validator=self._validator,
                     server_url=server_url,
+                    prm_metadata_getter=self.get_prm_metadata,
                 )
             )
 
