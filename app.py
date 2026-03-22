@@ -111,6 +111,11 @@ class _MCPASGIDispatch:
         path: str = scope.get("path", "")
         if scope.get("type") == "http":
             if path == "/mcp" or path.startswith("/mcp/"):
+                # Ensure trailing slash so Starlette's Mount("/mcp") matches
+                # directly without emitting a 307 redirect (which strips the
+                # Authorization header and may downgrade to HTTP).
+                if path == "/mcp":
+                    scope = dict(scope, path="/mcp/")
                 await self._mcp(scope, receive, send)
                 return
             if self._sse is not None and (
