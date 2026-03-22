@@ -2094,8 +2094,15 @@ def storageSas():
 # ---------------------------------------------------------------------------
 
 @bp.route("/.well-known/oauth-protected-resource", methods=["GET"])
-async def oauth_protected_resource():
-    """Serve OAuth 2.0 Protected Resource Metadata per RFC 9728."""
+@bp.route("/.well-known/oauth-protected-resource/<path:subpath>", methods=["GET"])
+async def oauth_protected_resource(subpath=None):
+    """Serve OAuth 2.0 Protected Resource Metadata per RFC 9728.
+
+    Handles both the direct path and the RFC 9728 §3 constructed path
+    (e.g. ``/.well-known/oauth-protected-resource/mcp`` for a resource
+    at ``/mcp``).  Some clients (VS Code) construct the path per RFC 9728
+    rather than using the ``resource_metadata`` URL from WWW-Authenticate.
+    """
     if not remote_mcp_server:
         return jsonify({"error": "Remote MCP server not initialized"}), 503
 
