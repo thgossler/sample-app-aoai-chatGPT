@@ -139,6 +139,26 @@ class _MCPAuthStarletteMiddleware(BaseHTTPMiddleware):
                 {"error": "Auth not configured"}, status_code=503
             )
 
+        # Reject Dynamic Client Registration (RFC 7591) requests with 404
+        # instead of 401.  This server uses Entra ID as the authorization
+        # server which does not support RFC 7591.  Returning 404 (instead
+        # of letting the auth middleware return 401) allows MCP clients to
+        # detect that registration is not available and fall back to
+        # pre-configured client credentials.
+        if request.url.path.rstrip("/").endswith("/register") and request.method == "POST":
+            return JSONResponse(
+                {
+                    "error": "registration_not_supported",
+                    "error_description": (
+                        "This server does not support OAuth 2.0 Dynamic Client "
+                        "Registration (RFC 7591). Register your application in "
+                        "Microsoft Entra ID and configure the MCP client with "
+                        "the resulting client_id."
+                    ),
+                },
+                status_code=404,
+            )
+
         if self._validator is None:
             return await call_next(request)
 
