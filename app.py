@@ -208,7 +208,7 @@ def create_app():
             "script-src 'self'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
-            "font-src 'self' data:; "
+            "font-src 'self' data: https://res-1.cdn.office.net https://res.cdn.office.net; "
             "connect-src 'self' https:; "
             "frame-ancestors 'none'"
         )
