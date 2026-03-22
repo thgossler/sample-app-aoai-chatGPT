@@ -166,7 +166,10 @@ class RemoteMCPServer:
         self._mcp_cfg = mcp_cfg
 
         server_name = getattr(app_settings.ui, "title", "Chat App") if app_settings.ui else "Chat App"
-        self.mcp = FastMCP(name=f"{server_name} MCP Server")
+        # Use stateless HTTP mode so the server does not rely on the
+        # Mcp-Session-Id response header surviving through reverse proxies
+        # (Azure App Service / EasyAuth can strip custom headers).
+        self.mcp = FastMCP(name=f"{server_name} MCP Server", stateless_http=True)
 
         self._initialized = False
 
