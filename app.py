@@ -196,7 +196,24 @@ def create_app():
                 await dispatch.shutdown_lifespan()
             except Exception as e:
                 logging.warning(f"FastMCP lifespan shutdown failed: {e}")
-    
+
+    @app.after_request
+    async def set_security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' data:; "
+            "connect-src 'self' https:; "
+            "frame-ancestors 'none'"
+        )
+        return response
+
     return app
 
 @bp.route("/")

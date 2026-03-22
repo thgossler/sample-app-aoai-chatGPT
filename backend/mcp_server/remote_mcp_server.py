@@ -47,6 +47,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from backend.mcp_server.auth_middleware import AuthError, EntraIDTokenValidator
 from backend.mcp_server.citation_resolver import CitationLinkResolver
@@ -64,6 +65,34 @@ _audit_logger = logging.getLogger("remote_mcp.audit")
 _caller_context: ContextVar[Dict[str, Any]] = ContextVar(
     "mcp_caller_context", default={}
 )
+
+
+class _SecurityHeadersMiddleware:
+    """Pure ASGI middleware that adds security headers to every response."""
+
+    HEADERS = [
+        (b"x-content-type-options", b"nosniff"),
+        (b"x-frame-options", b"DENY"),
+        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+        (b"permissions-policy", b"geolocation=(), camera=(), microphone=()"),
+    ]
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.extend(self.HEADERS)
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 class _MCPAuthStarletteMiddleware(BaseHTTPMiddleware):
@@ -197,6 +226,13 @@ class RemoteMCPServer:
 
         self._initialized = True
         logger.info("RemoteMCPServer initialized")
+
+    def _get_cors_origins(self) -> list:
+        """Return the list of allowed CORS origins from settings."""
+        cfg = self._mcp_cfg
+        if cfg and cfg.cors_allowed_origins:
+            return [o.strip() for o in cfg.cors_allowed_origins.split(",") if o.strip()]
+        return ["*"]
 
     def _setup_auth(self):
         """Create the token validator from settings (no-op if auth not configured)."""
@@ -613,12 +649,15 @@ class RemoteMCPServer:
         cfg = self._mcp_cfg
         server_url = (cfg.server_url or "") if cfg else ""
 
+        cors_origins = self._get_cors_origins()
         middleware: List[Any] = [
-            # CORS must be outermost so preflight responses are returned before
-            # any auth check.
+            # Security headers — outermost so they are always present.
+            Middleware(_SecurityHeadersMiddleware),
+            # CORS must run before auth so preflight responses are returned
+            # before any auth check.
             Middleware(
                 CORSMiddleware,
-                allow_origins=["*"],
+                allow_origins=cors_origins,
                 allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
                 allow_headers=["*"],
                 expose_headers=["Mcp-Session-Id"],
@@ -656,10 +695,12 @@ class RemoteMCPServer:
         cfg = self._mcp_cfg
         server_url = (cfg.server_url or "") if cfg else ""
 
+        cors_origins = self._get_cors_origins()
         middleware: List[Any] = [
+            Middleware(_SecurityHeadersMiddleware),
             Middleware(
                 CORSMiddleware,
-                allow_origins=["*"],
+                allow_origins=cors_origins,
                 allow_methods=["GET", "POST", "OPTIONS"],
                 allow_headers=["*"],
                 expose_headers=["Mcp-Session-Id"],

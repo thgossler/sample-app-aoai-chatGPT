@@ -245,8 +245,10 @@ class EntraIDTokenValidator:
                     azp,
                     self._allowed_client_ids,
                 )
-                # Log but do not reject — azp is advisory; proper scope/role
-                # check below is the enforcement boundary.
+                raise AuthError(
+                    f"Client application '{azp}' is not in the allowed list",
+                    status_code=403,
+                )
 
         logger.debug(
             "Token validated for sub=%s oid=%s",

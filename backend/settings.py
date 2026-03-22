@@ -805,6 +805,8 @@ class _RemoteMCPServerSettings(BaseSettings):
     auth_default_scope: Optional[str] = None
     # Client secret only required for OBO flow
     auth_client_secret: Optional[str] = None
+    # Comma-separated list of allowed CORS origins (default: "*")
+    cors_allowed_origins: Optional[str] = None
 
     @model_validator(mode="after")
     def set_defaults(self) -> Self:
