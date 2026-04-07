@@ -759,6 +759,30 @@ async def promptflow_request(request):
     except Exception as e:
         logging.error(f"An error occurred while making promptflow_request: {e}")
 
+def _extract_mcp_references(tool_messages):
+    """Extract references_markdown from MCP tool response messages.
+
+    Scans the list of messages produced by ``process_function_call`` /
+    ``process_function_call_stream`` for tool / function results that
+    contain a ``references_markdown`` field (as emitted by
+    ``search_knowledge_base``).  Returns the combined markdown string
+    or an empty string when no references are found.
+    """
+    parts = []
+    for msg in tool_messages:
+        if msg.get("role") not in ("tool", "function"):
+            continue
+        content = msg.get("content", "")
+        if not content or not isinstance(content, str):
+            continue
+        try:
+            data = json.loads(content)
+            if isinstance(data, dict) and data.get("references_markdown"):
+                parts.append(data["references_markdown"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return "\n".join(parts) if parts else ""
+
 async def process_function_call(response, model_name=None):
     """Process function calls from OpenAI response using the appropriate API path"""
     response_message = response.choices[0].message
@@ -1157,12 +1181,15 @@ async def complete_chat_request(request_body, request_headers):
         # Check if tools are available and if the model made any tool calls
         tools = mcp_manager.get_tools()
         original_citations = getattr(response, '_citations', None)  # Preserve citations from original response
+        function_response = None
+        mcp_references = ""
         
         if len(tools) > 0:
             function_response = await process_function_call(response, app_settings.azure_openai.model)
 
             if function_response:
                 # Tool calls were made, extend conversation and get final response
+                mcp_references = _extract_mcp_references(function_response)
                 request_body["messages"].extend(function_response)
                 response, apim_request_id = await send_chat_request(request_body, request_headers)
                 history_metadata = request_body.get("history_metadata", {})
@@ -1174,6 +1201,14 @@ async def complete_chat_request(request_body, request_headers):
         
         # Format the final response
         non_streaming_response = format_non_streaming_response(response, history_metadata, apim_request_id)
+
+        # Append MCP knowledge-base references if the LLM omitted them
+        if function_response and mcp_references:
+            for msg in non_streaming_response.get("choices", [{}])[0].get("messages", []):
+                if msg.get("role") == "assistant" and msg.get("content"):
+                    if "## References" not in msg["content"]:
+                        msg["content"] += f"\n\n### References\n{mcp_references}"
+                    break
 
     return non_streaming_response
 
@@ -1382,6 +1417,8 @@ async def stream_chat_request(request_body, request_headers):
                     
                     # Handle citation injection for tool call scenarios
                     citations_injected = False
+                    accumulated_content = ""
+                    mcp_references = _extract_mcp_references(function_call_stream_state.function_messages)
                     async for functionCompletionChunk in function_response:
                         # Inject citations only on the first chunk (once per stream) when tool calls are involved
                         # Use original citations if the new response doesn't have citations
@@ -1405,7 +1442,25 @@ async def stream_chat_request(request_body, request_headers):
                             yield citation_response
                             citations_injected = True
                         
-                        yield format_stream_response(functionCompletionChunk, history_metadata, apim_request_id)
+                        chunk_response = format_stream_response(functionCompletionChunk, history_metadata, apim_request_id)
+                        # Track accumulated assistant content for references dedup
+                        for msg in chunk_response.get("choices", [{}])[0].get("messages", []):
+                            if msg.get("role") == "assistant" and msg.get("content"):
+                                accumulated_content += msg["content"]
+                        yield chunk_response
+
+                    # Append MCP knowledge-base references if the LLM omitted them
+                    if mcp_references and "## References" not in accumulated_content:
+                        refs_chunk = {
+                            "id": "",
+                            "model": "",
+                            "created": 0,
+                            "object": "chat.completion.chunk",
+                            "choices": [{"messages": [{"role": "assistant", "content": f"\n\n### References\n{mcp_references}"}]}],
+                            "history_metadata": history_metadata,
+                            "apim-request-id": apim_request_id,
+                        }
+                        yield refs_chunk
                 
         else:
             # Handle manual RAG citations injection for reasoning models

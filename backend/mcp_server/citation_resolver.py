@@ -54,11 +54,27 @@ class CitationLinkResolver:
         "chunk_total": re.compile(r"^chunk_total:\s*(\d+)$", re.MULTILINE),
     }
 
+    # Pattern used to locate the first markdown heading in chunk content.
+    _HEADING_RE = re.compile(r"^#{1,6}\s+(.*)$", re.MULTILINE)
+
+    # Metadata/frontmatter line patterns to strip from content.
+    _FRONTMATTER_RE = re.compile(
+        r"^(?:---\s*$|source_url:\s*.+$|source_title:\s*.+$|source_file:\s*.+$"
+        r"|chunk_index:\s*\d+$|chunk_total:\s*\d+$)",
+        re.MULTILINE,
+    )
+
     def __init__(self, citation_file_settings):
         self._settings = citation_file_settings
 
         raw_base = getattr(citation_file_settings, "storage_base_url", None) or ""
         self.storage_base_url: str = raw_base.rstrip("/")
+
+        # Derive the blob container prefix the same way the frontend does:
+        # protocol + host + '/' + first path segment.
+        self.blob_container_prefix: str = self._derive_blob_container_prefix(
+            self.storage_base_url
+        )
 
         self.link_base_url: Optional[str] = (
             getattr(citation_file_settings, "link_base_url", None) or None
@@ -78,8 +94,13 @@ class CitationLinkResolver:
         """
         Resolve a single citation dict and return an enriched copy.
 
-        The returned dict will have a ``source_url`` key with the resolved
-        user-facing URL.  All original keys are preserved.
+        The returned dict will have:
+        - ``source_url``  — fully-resolved, user-facing URL
+        - ``source_type`` — one of ``"wiki"``, ``"pdf"``, ``"blob"``,
+          ``"url"`` (direct / non-blob)
+        - ``clean_content`` — chunk text with frontmatter metadata stripped
+
+        All original keys are preserved.
         """
         resolved = dict(citation)
 
@@ -90,24 +111,59 @@ class CitationLinkResolver:
 
         if not raw_url:
             resolved["source_url"] = None
+            resolved["source_type"] = None
             return resolved
 
         # 2. Resolve URL by document type
         if self._is_wiki_or_markdown(raw_url):
             resolved["source_url"] = self._resolve_wiki_url(raw_url)
+            resolved["source_type"] = "wiki"
         elif raw_url.lower().endswith(".pdf"):
             resolved["source_url"] = self._resolve_pdf_url(raw_url)
+            resolved["source_type"] = "pdf"
         elif self._is_blob_storage_url(raw_url):
             # Other blob file — return as-is (no SAS; not a sensitive URL)
             resolved["source_url"] = raw_url
+            resolved["source_type"] = "blob"
         else:
             resolved["source_url"] = raw_url
+            resolved["source_type"] = "url"
+
+        # 3. Enrich title with heading from content (mirrors frontend updateCitation)
+        resolved = self._enrich_title_with_heading(resolved)
+
+        # 4. Provide clean content (strip frontmatter/metadata lines)
+        resolved["clean_content"] = self._strip_frontmatter(
+            citation.get("content", "")
+        )
 
         return resolved
 
     def resolve_all(self, citations: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
         """Resolve all citations in a list."""
         return [self.resolve(c) for c in citations]
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _derive_blob_container_prefix(storage_base_url: str) -> str:
+        """Return ``protocol + host + '/' + first_path_segment``.
+
+        The frontend (Chat.tsx) parses ``FileStorageBaseUrl`` as a ``URL``
+        object and reconstructs the prefix this way.  We replicate that to
+        guarantee consistent relative-path extraction.
+        """
+        if not storage_base_url:
+            return ""
+        parsed = urllib.parse.urlparse(storage_base_url)
+        first_seg = (
+            parsed.path.strip("/").split("/")[0] if parsed.path.strip("/") else ""
+        )
+        if first_seg:
+            return f"{parsed.scheme}://{parsed.netloc}/{first_seg}"
+        return f"{parsed.scheme}://{parsed.netloc}"
 
     # ------------------------------------------------------------------
     # Embedded metadata extraction
@@ -142,6 +198,36 @@ class CitationLinkResolver:
 
         return result
 
+    def _enrich_title_with_heading(self, citation: Dict[str, Any]) -> Dict[str, Any]:
+        """Append the first markdown heading to the title when the URL has a
+        ``#`` fragment.  Mirrors the frontend ``updateCitation()`` behaviour in
+        ``Answer.tsx``.
+        """
+        url: str = citation.get("source_url") or citation.get("url") or ""
+        content: str = citation.get("content", "")
+        title: str = citation.get("title") or ""
+
+        if "#" not in url or not content:
+            return citation
+
+        match = self._HEADING_RE.search(content)
+        if match:
+            heading = match.group(1).strip()
+            # Only append if the heading text isn't already present
+            if heading and not title.endswith(heading):
+                citation["title"] = f"{title} - {heading}" if title else heading
+
+        return citation
+
+    @staticmethod
+    def _strip_frontmatter(content: str) -> str:
+        """Remove metadata / YAML-frontmatter lines from chunk content."""
+        if not content:
+            return content
+        cleaned = CitationLinkResolver._FRONTMATTER_RE.sub("", content)
+        # Collapse leading blank lines left behind
+        return cleaned.lstrip("\n")
+
     # ------------------------------------------------------------------
     # URL type detection
     # ------------------------------------------------------------------
@@ -168,17 +254,20 @@ class CitationLinkResolver:
 
         Mirrors frontend logic in Chat.tsx ``onShowCitation()`` — Wiki path.
         """
-        if not self.storage_base_url or not self.link_base_url:
+        if not self.blob_container_prefix or not self.link_base_url:
             logger.debug(
                 "Wiki URL resolution skipped (missing storage_base_url or link_base_url)"
             )
             return blob_url
 
-        # Strip the storage base prefix to get the relative path
-        if blob_url.startswith(self.storage_base_url):
-            rel_path = blob_url[len(self.storage_base_url):]
+        # Strip the blob container prefix to get the relative path,
+        # using the same prefix the frontend derives.
+        url_lower = blob_url.lower()
+        prefix_lower = self.blob_container_prefix.lower()
+        if url_lower.startswith(prefix_lower):
+            rel_path = blob_url[len(self.blob_container_prefix):]
         else:
-            # URL doesn't match base — return unchanged
+            # URL doesn't match blob storage — open directly (same as frontend)
             return blob_url
 
         # DevOps Wiki convention: strip .md extension

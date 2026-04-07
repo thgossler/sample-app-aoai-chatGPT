@@ -110,12 +110,18 @@ async def search_knowledge_base(
             if citation_resolver is not None:
                 citation = citation_resolver.resolve(citation)
 
+            # Use resolved metadata (from frontmatter extraction) with
+            # fallback to the original document fields.  The resolver
+            # promotes source_title → citation["title"], source_url →
+            # citation["url"], source_file → citation["filepath"], so
+            # those should take precedence over the raw index fields.
             result: Dict[str, Any] = {
                 "index": i + 1,
-                "content": doc.content,
-                "title": doc.title or doc.filename or citation.get("title") or "Document",
+                "content": citation.get("clean_content") or doc.content,
+                "title": citation.get("title") or doc.title or doc.filename or "Document",
                 "source_url": citation.get("source_url") or doc.url,
-                "filepath": doc.filename or citation.get("filepath"),
+                "source_type": citation.get("source_type"),
+                "filepath": citation.get("filepath") or doc.filename,
                 "relevance_score": doc.score,
                 "chunk_id": citation.get("chunk_id"),
             }
@@ -127,6 +133,18 @@ async def search_knowledge_base(
                 result["chunk_total"] = citation["chunk_total"]
 
             results.append(result)
+
+        # Build markdown references section for the LLM to include
+        references_lines = []
+        for result in results:
+            idx = result["index"]
+            title = result.get("title") or result.get("filepath") or "Document"
+            url = result.get("source_url") or ""
+            if url:
+                references_lines.append(f"[{idx}] [{title}]({url})")
+            else:
+                references_lines.append(f"[{idx}] {title}")
+        references_markdown = "\n".join(references_lines)
 
         logger.info(
             "search_knowledge_base: query=%r top_k=%d results=%d",
@@ -146,6 +164,14 @@ async def search_knowledge_base(
                         else "default"
                     ),
                 "results": results,
+                "references_markdown": references_markdown,
+                "citation_instructions": (
+                    "When referencing these search results use [N] notation "
+                    "(e.g. [1], [2]) matching the result index numbers. "
+                    "At the end of your response, include a 'References' "
+                    "section with each cited source on its own line using "
+                    "the exact format from references_markdown above."
+                ),
             },
             ensure_ascii=False,
             indent=2,
