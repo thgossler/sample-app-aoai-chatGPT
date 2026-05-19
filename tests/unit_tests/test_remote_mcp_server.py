@@ -18,11 +18,16 @@ Tests cover:
 - double initialize() is idempotent
 """
 
-import pytest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch, call
 
+import pytest
+
 from backend.mcp_server.auth_middleware import AuthError
-from backend.mcp_server.remote_mcp_server import RemoteMCPServer
+from backend.mcp_server.remote_mcp_server import (
+    _MCPAuthStarletteMiddleware,
+    RemoteMCPServer,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +301,84 @@ class TestValidateRequestToken:
         server._validator = None
         claims = await server.validate_request_token("Bearer sometoken")
         assert claims == {}
+
+
+# ---------------------------------------------------------------------------
+# HTTP auth challenge tests
+# ---------------------------------------------------------------------------
+
+class TestMCPAuthMiddlewareChallenges:
+    def _middleware(self, validator):
+        return _MCPAuthStarletteMiddleware(
+            app=MagicMock(),
+            validator=validator,
+            server_url="https://app.example.com/mcp",
+            prm_metadata_getter=lambda: {
+                "scopes_supported": [
+                    "api://client-456/MCP.Tools.Read",
+                    "api://client-456/MCP.Tools.Execute",
+                ],
+                "scopes_default": ["api://client-456/MCP.Tools.Execute"],
+            },
+        )
+
+    @staticmethod
+    def _request(headers=None):
+        return SimpleNamespace(
+            url=SimpleNamespace(path="/mcp"),
+            method="POST",
+            headers=headers or {},
+        )
+
+    @pytest.mark.asyncio
+    async def test_401_challenge_includes_invalid_token_metadata_and_scope(self):
+        validator = MagicMock()
+        validator.validate_token = AsyncMock(
+            side_effect=AuthError("Token has expired", status_code=401)
+        )
+        middleware = self._middleware(validator)
+        call_next = AsyncMock()
+
+        response = await middleware.dispatch(
+            self._request({"authorization": "Bearer expired-token"}),
+            call_next,
+        )
+
+        assert response.status_code == 401
+        call_next.assert_not_called()
+        challenge = response.headers["www-authenticate"]
+        assert 'error="invalid_token"' in challenge
+        assert 'error_description="Token has expired"' in challenge
+        assert (
+            'resource_metadata="https://app.example.com/.well-known/oauth-protected-resource"'
+            in challenge
+        )
+        assert 'scope="api://client-456/MCP.Tools.Execute"' in challenge
+
+    @pytest.mark.asyncio
+    async def test_403_challenge_includes_insufficient_scope_and_required_scope(self):
+        validator = MagicMock()
+        validator.validate_token = AsyncMock(
+            return_value={"oid": "u", "scp": "openid"}
+        )
+        middleware = self._middleware(validator)
+        call_next = AsyncMock()
+
+        response = await middleware.dispatch(
+            self._request({"authorization": "Bearer low-scope-token"}),
+            call_next,
+        )
+
+        assert response.status_code == 403
+        call_next.assert_not_called()
+        challenge = response.headers["www-authenticate"]
+        assert 'error="insufficient_scope"' in challenge
+        assert 'error_description="Insufficient MCP scope or role"' in challenge
+        assert (
+            'resource_metadata="https://app.example.com/.well-known/oauth-protected-resource"'
+            in challenge
+        )
+        assert 'scope="api://client-456/MCP.Tools.Execute"' in challenge
 
 
 # ---------------------------------------------------------------------------

@@ -115,6 +115,68 @@ class _MCPAuthStarletteMiddleware(BaseHTTPMiddleware):
         self._server_url = server_url
         self._prm_metadata_getter = prm_metadata_getter
 
+    @staticmethod
+    def _quote_www_auth_value(value: str) -> str:
+        return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+    def _get_prm_url(self) -> str:
+        base_url = (
+            self._server_url.rsplit("/mcp", 1)[0]
+            if self._server_url
+            else ""
+        )
+        return f"{base_url}/.well-known/oauth-protected-resource" if base_url else ""
+
+    def _get_challenge_scope(self) -> Optional[str]:
+        if not self._prm_metadata_getter:
+            return None
+
+        try:
+            metadata = self._prm_metadata_getter()
+        except Exception:
+            logger.exception("Failed to build MCP auth challenge scope")
+            return None
+
+        if not isinstance(metadata, dict):
+            return None
+
+        for key in ("scopes_default", "scopes_supported"):
+            raw_scopes = metadata.get(key)
+            if isinstance(raw_scopes, str) and raw_scopes:
+                return raw_scopes
+            if isinstance(raw_scopes, list):
+                scopes = [str(scope) for scope in raw_scopes if scope]
+                if scopes:
+                    return " ".join(scopes)
+
+        return None
+
+    def _build_www_authenticate_header(
+        self,
+        *,
+        error: Optional[str] = None,
+        error_description: Optional[str] = None,
+        scope: Optional[str] = None,
+    ) -> str:
+        params = [("realm", "Remote MCP Server")]
+        if error:
+            params.append(("error", error))
+        if error_description:
+            params.append(("error_description", error_description))
+
+        prm_url = self._get_prm_url()
+        if prm_url:
+            params.append(("resource_metadata", prm_url))
+
+        challenge_scope = scope or self._get_challenge_scope()
+        if challenge_scope:
+            params.append(("scope", challenge_scope))
+
+        return "Bearer " + ", ".join(
+            f'{name}="{self._quote_www_auth_value(value)}"'
+            for name, value in params
+        )
+
     async def dispatch(
         self, request: StarletteRequest, call_next
     ):
@@ -175,31 +237,26 @@ class _MCPAuthStarletteMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(
                     {"error": "Forbidden", "detail": "Insufficient MCP scope/role"},
                     status_code=403,
+                    headers={
+                        "WWW-Authenticate": self._build_www_authenticate_header(
+                            error="insufficient_scope",
+                            error_description="Insufficient MCP scope or role",
+                        )
+                    },
                 )
             # Propagate caller identity to tool functions via ContextVar
             _caller_context.set(EntraIDTokenValidator.get_caller_identity(claims))
         except AuthError as exc:
             if exc.status_code == 401:
-                # The PRM metadata endpoint is served by Quart at the
-                # app root, not under /mcp/.  Strip the MCP path so the
-                # URL points to the unauthenticated Quart route.
-                base_url = (
-                    self._server_url.rsplit("/mcp", 1)[0]
-                    if self._server_url
-                    else ""
-                )
-                prm_url = (
-                    f"{base_url}/.well-known/oauth-protected-resource"
-                    if base_url
-                    else ""
-                )
-                www_auth = 'Bearer realm="Remote MCP Server"'
-                if prm_url:
-                    www_auth += f', resource_metadata="{prm_url}"'
                 return JSONResponse(
                     {"error": "Unauthorized", "detail": str(exc)},
                     status_code=401,
-                    headers={"WWW-Authenticate": www_auth},
+                    headers={
+                        "WWW-Authenticate": self._build_www_authenticate_header(
+                            error="invalid_token",
+                            error_description=str(exc),
+                        )
+                    },
                 )
             return JSONResponse(
                 {"error": "Forbidden", "detail": str(exc)}, status_code=403
