@@ -711,12 +711,15 @@ class RemoteMCPServer:
             return None
 
         server_url = cfg.server_url or "/mcp"
-        scopes = None
-        if cfg.auth_client_id:
-            scopes = [
-                f"api://{cfg.auth_client_id}/MCP.Tools.Read",
-                f"api://{cfg.auth_client_id}/MCP.Tools.Execute",
-            ]
+        # Scopes are prefixed with the Application ID URI (auth_audience) so the
+        # advertised scopes belong to the same resource Entra validates against
+        # the RFC 8707 'resource' parameter. With a verified custom domain the
+        # App ID URI is the MCP server URL; otherwise it is api://<client_id>.
+        app_id_uri = (cfg.auth_audience or f"api://{cfg.auth_client_id}").rstrip("/")
+        scopes = [
+            f"{app_id_uri}/MCP.Tools.Read",
+            f"{app_id_uri}/MCP.Tools.Execute",
+        ]
 
         return build_prm_metadata(
             server_url=server_url,
@@ -724,7 +727,6 @@ class RemoteMCPServer:
             client_id=cfg.auth_client_id,
             scopes_supported=scopes,
             default_scope=cfg.auth_default_scope,
-            resource_id=cfg.auth_audience or f"api://{cfg.auth_client_id}",
         )
 
     # ------------------------------------------------------------------

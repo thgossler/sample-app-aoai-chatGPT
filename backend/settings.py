@@ -817,8 +817,12 @@ class _RemoteMCPServerSettings(BaseSettings):
                 self.auth_issuer = "https://login.microsoftonline.com/common/v2.0"
             else:
                 self.auth_issuer = f"https://login.microsoftonline.com/{self.auth_tenant_id}/v2.0"
-        if self.auth_client_id and not self.auth_default_scope:
-            self.auth_default_scope = f"api://{self.auth_client_id}/MCP.Tools.Execute"
+        # The default scope is derived from the Application ID URI (auth_audience)
+        # so that PRM scopes and the token 'resource' stay consistent. When the
+        # App ID URI is the MCP server URL (verified custom domain), scopes take
+        # the form "<server-url>/MCP.Tools.Execute"; otherwise "api://<id>/...".
+        if self.auth_audience and not self.auth_default_scope:
+            self.auth_default_scope = f"{self.auth_audience}/MCP.Tools.Execute"
         return self
 
 
