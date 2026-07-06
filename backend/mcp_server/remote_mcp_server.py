@@ -724,6 +724,7 @@ class RemoteMCPServer:
             client_id=cfg.auth_client_id,
             scopes_supported=scopes,
             default_scope=cfg.auth_default_scope,
+            resource_id=cfg.auth_audience or f"api://{cfg.auth_client_id}",
         )
 
     # ------------------------------------------------------------------

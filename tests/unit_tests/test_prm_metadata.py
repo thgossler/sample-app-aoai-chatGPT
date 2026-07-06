@@ -92,3 +92,28 @@ class TestBuildPrmMetadata:
             client_id=CLIENT_ID,
         )
         assert "scopes_default" not in meta
+
+    def test_resource_id_overrides_server_url(self):
+        # When resource_id is provided it becomes the ``resource`` identifier
+        # (must match the scopes' Application ID URI so Entra ID accepts the
+        # RFC 8707 resource parameter), while the documentation link still
+        # derives from server_url.
+        resource_id = f"api://{CLIENT_ID}"
+        meta = build_prm_metadata(
+            server_url=SERVER_URL,
+            tenant_id=TENANT_ID,
+            client_id=CLIENT_ID,
+            resource_id=resource_id,
+        )
+        assert meta["resource"] == resource_id
+        assert meta["resource_documentation"].startswith("https://myapp.azurewebsites.net")
+
+    def test_resource_id_strips_trailing_slash(self):
+        meta = build_prm_metadata(
+            server_url=SERVER_URL,
+            tenant_id=TENANT_ID,
+            client_id=CLIENT_ID,
+            resource_id=f"api://{CLIENT_ID}/",
+        )
+        assert meta["resource"] == f"api://{CLIENT_ID}"
+

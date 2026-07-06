@@ -407,11 +407,16 @@ class TestGetPrmMetadata:
         meta = server.get_prm_metadata()
         assert meta is None
 
-    def test_server_url_in_resource_field(self):
+    def test_resource_field_matches_scope_app_id_uri(self):
+        # The ``resource`` identifier must equal the scopes' Application ID URI
+        # (api://<client_id>) so Entra ID accepts the RFC 8707 resource
+        # parameter sent by MCP clients (avoids AADSTS9010010).
         settings = _make_app_settings(with_mcp_cfg=True)
         server = RemoteMCPServer(app_settings=settings)
         meta = server.get_prm_metadata()
-        assert "https://app.example.com/mcp" in meta["resource"]
+        assert meta["resource"] == "api://client-456"
+        for scope in meta["scopes_supported"]:
+            assert scope.startswith(meta["resource"] + "/")
 
     def test_scopes_include_client_id(self):
         settings = _make_app_settings(with_mcp_cfg=True)

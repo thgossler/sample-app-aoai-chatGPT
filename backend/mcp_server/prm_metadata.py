@@ -28,6 +28,7 @@ def build_prm_metadata(
     client_id: str,
     scopes_supported: list[str] | None = None,
     default_scope: str | None = None,
+    resource_id: str | None = None,
 ) -> Dict[str, Any]:
     """
     Build the Protected Resource Metadata dict (RFC 9728 §2).
@@ -36,8 +37,8 @@ def build_prm_metadata(
     ----------
     server_url:
         The full URL of the MCP endpoint (e.g.
-        ``https://myapp.azurewebsites.net/mcp``).  This becomes the
-        ``resource`` identifier that clients MUST include in token requests.
+        ``https://myapp.azurewebsites.net/mcp``).  Used to build the
+        ``resource_documentation`` link.
     tenant_id:
         Entra ID tenant ID.
     client_id:
@@ -46,6 +47,14 @@ def build_prm_metadata(
         List of OAuth scopes.  Defaults to the two standard MCP scopes.
     default_scope:
         Scope string advertised to clients that support a single scope hint.
+    resource_id:
+        The ``resource`` identifier that RFC 8707-aware clients (e.g. VS Code)
+        send as the ``resource`` parameter in token requests, and which Entra
+        ID validates against the requested scopes.  This MUST match the
+        Application ID URI that owns the advertised scopes (e.g.
+        ``api://<client_id>``) — otherwise Entra rejects the token request
+        with ``AADSTS9010010`` (resource/scope mismatch).  Defaults to the
+        cleaned ``server_url`` for backwards compatibility.
     """
     if scopes_supported is None:
         scopes_supported = [
@@ -53,8 +62,10 @@ def build_prm_metadata(
             f"api://{client_id}/MCP.Tools.Execute",
         ]
 
-    # Strip trailing slash from server_url to form clean resource URI
-    resource = server_url.rstrip("/")
+    # The resource identifier must align with the scopes' Application ID URI so
+    # that Entra ID accepts the RFC 8707 ``resource`` parameter.  Fall back to
+    # the cleaned server_url when no explicit resource_id is supplied.
+    resource = (resource_id or server_url).rstrip("/")
 
     authorization_server = (
         f"https://login.microsoftonline.com/{tenant_id}/v2.0"
@@ -68,7 +79,7 @@ def build_prm_metadata(
         "scopes_supported": scopes_supported,
         "bearer_methods_supported": ["header"],
         # Informational
-        "resource_documentation": f"{resource.rsplit('/mcp', 1)[0]}/docs/mcp",
+        "resource_documentation": f"{server_url.rstrip('/').rsplit('/mcp', 1)[0]}/docs/mcp",
     }
 
     if default_scope:
