@@ -19,9 +19,30 @@ These functions are registered on the FastMCP instance in
 
 import json
 import logging
+import re
+import urllib.parse
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _source_identity(result: Dict[str, Any]) -> str:
+    filepath = result.get("filepath")
+    if filepath:
+        normalized_filepath = re.sub(
+            r"__\d+(?=\.md$)", "", str(filepath), flags=re.IGNORECASE
+        )
+        return f"filepath:{normalized_filepath.casefold()}"
+
+    source_url = result.get("source_url") or result.get("url") or ""
+    parsed_url = urllib.parse.urlsplit(str(source_url))
+    normalized_path = re.sub(
+        r"__\d+(?=\.md$)", "", parsed_url.path, flags=re.IGNORECASE
+    )
+    normalized_url = urllib.parse.urlunsplit(
+        (parsed_url.scheme, parsed_url.netloc, normalized_path, parsed_url.query, "")
+    )
+    return f"url:{normalized_url.casefold()}"
 
 
 async def search_knowledge_base(
@@ -102,6 +123,7 @@ async def search_knowledge_base(
             )
 
         results: List[Dict[str, Any]] = []
+        results_by_source: Dict[str, Dict[str, Any]] = {}
         for i, doc in enumerate(documents):
             citation = doc.to_citation_dict()
             citation["id"] = str(i + 1)
@@ -116,7 +138,7 @@ async def search_knowledge_base(
             # citation["url"], source_file → citation["filepath"], so
             # those should take precedence over the raw index fields.
             result: Dict[str, Any] = {
-                "index": i + 1,
+                "index": len(results) + 1,
                 "content": citation.get("clean_content") or doc.content,
                 "title": citation.get("title") or doc.title or doc.filename or "Document",
                 "url": citation.get("source_url") or doc.url,
@@ -133,6 +155,16 @@ async def search_knowledge_base(
             if citation.get("chunk_total"):
                 result["chunk_total"] = citation["chunk_total"]
 
+            source_key = _source_identity(result)
+            existing_result = results_by_source.get(source_key)
+            if existing_result is not None:
+                existing_content = existing_result.get("content") or ""
+                duplicate_content = result.get("content") or ""
+                if duplicate_content and duplicate_content not in existing_content:
+                    existing_result["content"] = f"{existing_content}\n\n{duplicate_content}"
+                continue
+
+            results_by_source[source_key] = result
             results.append(result)
 
         # Build markdown references section for the LLM to include

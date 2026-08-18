@@ -96,7 +96,14 @@ class TestSearchKnowledgeBase:
 
     @pytest.mark.asyncio
     async def test_results_indexed_from_1(self):
-        docs = [_make_rag_doc(content=f"Content {i}") for i in range(3)]
+        docs = [
+            _make_rag_doc(
+                content=f"Content {i}",
+                url=f"https://blob.example.com/file{i}.md",
+                filename=f"file{i}.md",
+            )
+            for i in range(3)
+        ]
         retriever = _make_rag_retriever(docs)
         result = await search_knowledge_base(query="q", rag_retriever=retriever)
         data = json.loads(result)
@@ -145,6 +152,29 @@ class TestSearchKnowledgeBase:
         resolver.resolve.assert_called_once()
         assert data["results"][0]["url"] == "https://resolved.example.com/page"
         assert data["results"][0]["source_url"] == "https://resolved.example.com/page"
+
+    @pytest.mark.asyncio
+    async def test_results_are_aggregated_by_source_file(self):
+        first_doc = _make_rag_doc(
+            content="First chunk",
+            url="https://docs.example.com/guide__001.md#first",
+            filename="guide__001.md",
+        )
+        second_doc = _make_rag_doc(
+            content="Second chunk",
+            url="https://docs.example.com/guide__002.md#second",
+            filename="guide__002.md",
+        )
+        retriever = _make_rag_retriever([first_doc, second_doc])
+
+        result = await search_knowledge_base(query="q", rag_retriever=retriever)
+
+        data = json.loads(result)
+        assert data["total_results"] == 1
+        assert len(data["results"]) == 1
+        assert "First chunk" in data["results"][0]["content"]
+        assert "Second chunk" in data["results"][0]["content"]
+        assert data["references_markdown"].count("[1]") == 1
 
     @pytest.mark.asyncio
     async def test_search_type_override_set_and_restored(self):
