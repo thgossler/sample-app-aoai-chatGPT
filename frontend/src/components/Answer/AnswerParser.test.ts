@@ -54,3 +54,60 @@ describe('enumerateCitations', () => {
     expect(results[2].part_index).toEqual(1)
   })
 })
+
+describe('parseAnswer', () => {
+  it('deduplicates citations that resolve to the same URL', () => {
+    const answer = {
+      ...sampleAnswer,
+      answer: 'The same document is cited [doc1] and [doc2].',
+      citations: sampleCitations.map((citation, index) => ({
+        ...citation,
+        url: index < 2 ? 'https://docs.example.com/kubernetes' : citation.url
+      }))
+    }
+
+    const parsed = parseAnswer(answer)
+
+    expect(parsed?.citations).toHaveLength(1)
+    expect(parsed?.markdownFormatText).toBe('The same document is cited  ^1^  and  ^1^ .')
+  })
+
+  it('deduplicates chunk URLs and fragments for one source document', () => {
+    const answer: AskResponse = {
+      answer: 'See [doc1] and [doc2].',
+      citations: [
+        { ...sampleCitations[0], url: 'https://docs.example.com/guide__001.md#part-a' },
+        { ...sampleCitations[1], url: 'https://docs.example.com/guide__002.md#part-b' }
+      ],
+      generated_chart: null
+    }
+
+    const parsed = parseAnswer(answer)
+
+    expect(parsed?.citations).toHaveLength(1)
+    expect(parsed?.markdownFormatText).toBe('See  ^1^  and  ^1^ .')
+  })
+
+  it('uses source_file metadata as the citation identity', () => {
+    const answer: AskResponse = {
+      answer: 'See [doc1] and [doc2].',
+      citations: [
+        {
+          ...sampleCitations[0],
+          content: 'source_file: /docs/guide.md\nContent 1',
+          url: 'https://storage.example.com/guide__001.md'
+        },
+        {
+          ...sampleCitations[1],
+          content: 'source_file: /docs/guide.md\nContent 2',
+          url: 'https://storage.example.com/guide__002.md'
+        }
+      ],
+      generated_chart: null
+    }
+
+    const parsed = parseAnswer(answer)
+
+    expect(parsed?.citations).toHaveLength(1)
+  })
+})

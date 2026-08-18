@@ -28,6 +28,40 @@ export const enumerateCitations = (citations: Citation[]) => {
   return citations
 }
 
+const getEmbeddedMetadata = (citation: Citation, field: string) => {
+  const match = citation.content?.match(new RegExp(`^${field}\\s*:\\s*(.+)$`, 'm'))
+  return match?.[1].trim() || ''
+}
+
+const normalizeCitationUrl = (url: string) => {
+  try {
+    const parsedUrl = new URL(url)
+    parsedUrl.hash = ''
+    parsedUrl.pathname = parsedUrl.pathname.replace(/__\d+(?=\.md$)/i, '')
+    return parsedUrl.toString().replace(/\/$/, '')
+  } catch {
+    return url.replace(/#.*$/, '').replace(/__\d+(?=\.md$)/i, '')
+  }
+}
+
+const getCitationKey = (citation: Citation, citationIndex: string) => {
+  const sourceFile = getEmbeddedMetadata(citation, 'source_file')
+  if (sourceFile) {
+    return `file:${sourceFile.replace(/__\d+(?=\.md$)/i, '')}`
+  }
+
+  const sourceUrl = getEmbeddedMetadata(citation, 'source_url') || citation.url || ''
+  if (sourceUrl) {
+    return `url:${normalizeCitationUrl(sourceUrl)}`
+  }
+
+  if (citation.filepath) {
+    return `file:${citation.filepath.replace(/__\d+(?=\.md$)/i, '')}`
+  }
+
+  return `id:${citationIndex}`
+}
+
 export function parseAnswer(answer: AskResponse): ParsedAnswer {
   if (typeof answer.answer !== "string") return null
   let answerText = answer.answer
@@ -41,16 +75,26 @@ export function parseAnswer(answer: AskResponse): ParsedAnswer {
   }
   let filteredCitations = [] as Citation[]
   let citationReindex = 0
+  const citationKeyMap = new Map<string, number>()
   citationLinks?.forEach(link => {
     // Replacing the links/citations with a number
     const citationIndex = link.slice(lengthDocN, link.length - 1)
     const citation = cloneDeep(answer.citations[Number(citationIndex) - 1]) as Citation
-    if (!filteredCitations.find(c => c.id === citationIndex) && citation) {
-      answerText = answerText.replaceAll(link, ` ^${++citationReindex}^ `)
-      citation.id = citationIndex // original doc index to de-dupe
-      citation.reindex_id = citationReindex.toString() // reindex from 1 for display
-      filteredCitations.push(citation)
+    if (!citation) return
+
+    const citationKey = getCitationKey(citation, citationIndex)
+    const existingReference = citationKeyMap.get(citationKey)
+    if (existingReference) {
+      answerText = answerText.replaceAll(link, ` ^${existingReference}^ `)
+      return
     }
+
+    const referenceNumber = ++citationReindex
+    citationKeyMap.set(citationKey, referenceNumber)
+    answerText = answerText.replaceAll(link, ` ^${referenceNumber}^ `)
+    citation.id = citationIndex // original doc index to de-dupe
+    citation.reindex_id = referenceNumber.toString() // reindex from 1 for display
+    filteredCitations.push(citation)
   })
 
   filteredCitations = enumerateCitations(filteredCitations)
