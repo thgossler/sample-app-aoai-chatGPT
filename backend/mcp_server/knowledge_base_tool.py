@@ -119,6 +119,7 @@ async def search_knowledge_base(
                 "index": i + 1,
                 "content": citation.get("clean_content") or doc.content,
                 "title": citation.get("title") or doc.title or doc.filename or "Document",
+                "url": citation.get("source_url") or doc.url,
                 "source_url": citation.get("source_url") or doc.url,
                 "source_type": citation.get("source_type"),
                 "filepath": citation.get("filepath") or doc.filename,

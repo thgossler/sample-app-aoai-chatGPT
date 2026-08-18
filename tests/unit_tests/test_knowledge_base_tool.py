@@ -143,6 +143,7 @@ class TestSearchKnowledgeBase:
         )
         data = json.loads(result)
         resolver.resolve.assert_called_once()
+        assert data["results"][0]["url"] == "https://resolved.example.com/page"
         assert data["results"][0]["source_url"] == "https://resolved.example.com/page"
 
     @pytest.mark.asyncio

@@ -47,6 +47,20 @@ class TestWikiUrlResolution:
         # Path should be URL-encoded
         assert "Architecture" in src or "%2F" in src or "Architecture%2F" in src
 
+    def test_chunk_suffix_is_removed_from_wiki_url(self):
+        r = self._resolver()
+        blob_url = "https://mystorage.blob.core.windows.net/mycontainer/4977-Kubernetes-Guideline__001.md"
+        resolved = r.resolve({"url": blob_url, "content": ""})
+        assert resolved["source_url"].endswith("%2F4977-Kubernetes-Guideline")
+        assert "__001" not in resolved["source_url"]
+
+    def test_query_string_is_not_encoded_into_wiki_path(self):
+        r = self._resolver()
+        blob_url = "https://mystorage.blob.core.windows.net/mycontainer/Page__001.md?sv=1"
+        resolved = r.resolve({"url": blob_url, "content": ""})
+        assert resolved["source_url"].endswith("%2FPage")
+        assert "%3F" not in resolved["source_url"]
+
     def test_underscore_wiki_in_url_triggers_wiki_resolution(self):
         r = self._resolver()
         blob_url = "https://mystorage.blob.core.windows.net/mycontainer/Docs/_wiki/Page.md"

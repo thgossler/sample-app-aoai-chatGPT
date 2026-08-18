@@ -233,12 +233,11 @@ class CitationLinkResolver:
     # ------------------------------------------------------------------
 
     def _is_wiki_or_markdown(self, url: str) -> bool:
-        url_lower = url.lower()
+        parsed = urllib.parse.urlsplit(url)
+        url_lower = parsed.path.lower()
         return (
             "_wiki" in url_lower
             or url_lower.endswith(".md")
-            or ".md#" in url_lower
-            or ".md?" in url_lower
         )
 
     def _is_blob_storage_url(self, url: str) -> bool:
@@ -260,18 +259,26 @@ class CitationLinkResolver:
             )
             return blob_url
 
-        # Strip the blob container prefix to get the relative path,
-        # using the same prefix the frontend derives.
-        url_lower = blob_url.lower()
-        prefix_lower = self.blob_container_prefix.lower()
-        if url_lower.startswith(prefix_lower):
-            rel_path = blob_url[len(self.blob_container_prefix):]
-        else:
+        # Compare the parsed origin and container path so query strings and
+        # path-prefix lookalikes cannot affect relative-path extraction.
+        blob_parts = urllib.parse.urlsplit(blob_url)
+        prefix_parts = urllib.parse.urlsplit(self.blob_container_prefix)
+        prefix_path = prefix_parts.path.rstrip("/")
+        if (
+            blob_parts.scheme.lower() != prefix_parts.scheme.lower()
+            or blob_parts.netloc.lower() != prefix_parts.netloc.lower()
+            or not blob_parts.path.lower().startswith(
+                f"{prefix_path.lower()}/"
+            )
+        ):
             # URL doesn't match blob storage — open directly (same as frontend)
             return blob_url
 
+        rel_path = blob_parts.path[len(prefix_path):]
+
         # DevOps Wiki convention: strip .md extension
         if "_wiki" in self.link_base_url.lower():
+            rel_path = re.sub(r"__\d+(?=\.md$)", "", rel_path, flags=re.IGNORECASE)
             rel_path = re.sub(r"\.md$", "", rel_path, flags=re.IGNORECASE)
 
         encoded = urllib.parse.quote(rel_path, safe="")
