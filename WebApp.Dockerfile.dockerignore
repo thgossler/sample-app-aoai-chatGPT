@@ -10,7 +10,7 @@ __pycache__
 
 # Docker
 WebApp.Dockerfile
-WebApp.dockerignore
+WebApp.Dockerfile.dockerignore
 
 # Frontend (built in multi-stage)
 frontend/node_modules

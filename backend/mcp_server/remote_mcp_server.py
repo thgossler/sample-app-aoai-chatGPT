@@ -298,7 +298,7 @@ class RemoteMCPServer:
         # Use stateless HTTP mode so the server does not rely on the
         # Mcp-Session-Id response header surviving through reverse proxies
         # (Azure App Service / EasyAuth can strip custom headers).
-        self.mcp = FastMCP(name=f"{server_name} MCP Server", stateless_http=True)
+        self.mcp = FastMCP(name=f"{server_name} MCP Server")
 
         self._initialized = False
 
@@ -782,7 +782,7 @@ class RemoteMCPServer:
                 "accepts ALL requests without token validation."
             )
 
-        return self.mcp.http_app(path=base_path, middleware=middleware)
+        return self.mcp.http_app(path=base_path, middleware=middleware, stateless_http=True)
 
     def get_sse_asgi_app(self):
         """

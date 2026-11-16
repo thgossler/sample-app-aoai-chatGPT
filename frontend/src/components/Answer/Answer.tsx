@@ -270,18 +270,21 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
   }
 
   const components = {
-    code({ node, ...props }: { node: any;[key: string]: any }) {
+    code({ node, ...props }: { node?: any;[key: string]: any }) {
       let language
       if (props.className) {
         const match = props.className.match(/language-(\w+)/)
         language = match ? match[1] : undefined
       }
-      const codeString = node.children[0].value ?? ''
+      const codeString = node?.children[0]?.value ?? ''
       return (
         <SyntaxHighlighter style={nord} language={language} PreTag="div" {...props}>
           {codeString}
         </SyntaxHighlighter>
       )
+    },
+    a({ node, ...props }: { node?: any;[key: string]: any }) {
+      return <a {...props} target="_blank" rel="noopener noreferrer" />
     }
   }
   return (
@@ -290,17 +293,15 @@ export const Answer = ({ answer, onCitationClicked, onExectResultClicked }: Prop
         <Stack.Item>
           <Stack horizontal grow>
             <Stack.Item grow>
-              {parsedAnswer && <ReactMarkdown
-                linkTarget="_blank"
+              {parsedAnswer && <div className={styles.answerText}><ReactMarkdown
                 remarkPlugins={[remarkGfm, supersub]}
                 children={
                   SANITIZE_ANSWER
                     ? DOMPurify.sanitize(parsedAnswer?.markdownFormatText, { ALLOWED_TAGS: XSSAllowTags, ALLOWED_ATTR: XSSAllowAttributes })
                     : parsedAnswer?.markdownFormatText
                 }
-                className={styles.answerText}
                 components={components}
-              />}
+              /></div>}
             </Stack.Item>
             <Stack.Item className={styles.answerHeader}>
               {FEEDBACK_ENABLED && answer.message_id !== undefined && (

@@ -1,13 +1,13 @@
 .container {
-  max-height: calc(100vh - 100px);
+  min-height: 0;
+  overflow-y: auto;
   width: 300px;
   background: var(--color-bg-secondary);
   color: var(--color-text);
 }
 
 .listContainer {
-  overflow: hidden auto;
-  max-height: calc(90vh - 105px);
+  overflow: visible;
   background: var(--color-bg-secondary);
   color: var(--color-text);
 }
@@ -83,6 +83,9 @@
 
 @media (max-width: 480px) {
   .container {
-    width: 100%;
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: auto;
   }
 }

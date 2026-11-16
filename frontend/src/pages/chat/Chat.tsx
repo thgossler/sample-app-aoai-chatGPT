@@ -1169,10 +1169,9 @@ const Chat = () => {
                 onClick={() => onViewSource(activeCitation)}>
                 {activeCitation.title}
               </h5>
-              <div tabIndex={0}>
+              <div tabIndex={0} className={styles.citationPanelContent}>
                 <ReactMarkdown
-                  linkTarget="_blank"
-                  className={styles.citationPanelContent}
+                  components={{ a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}
                   children={DOMPurify.sanitize(activeCitation.content, { ALLOWED_TAGS: XSSAllowTags })}
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[rehypeRaw]}

@@ -186,21 +186,12 @@ class TestSetupAuth:
 # ---------------------------------------------------------------------------
 
 class TestRegisterKnowledgeBaseTools:
-    def test_tools_registered_on_mcp_instance(self):
+    @pytest.mark.asyncio
+    async def test_tools_registered_on_mcp_instance(self):
         server = RemoteMCPServer(app_settings=_make_app_settings())
         server._register_knowledge_base_tools()
-        # FastMCP should expose a list_tools() or _tools dict
-        # Use duck-typing: the tool names should be discoverable
-        # FastMCP's internal dict is at server.mcp._tools
-        tool_names = set()
-        if hasattr(server.mcp, "_tools"):
-            tool_names = set(server.mcp._tools.keys())
-        elif hasattr(server.mcp, "list_tools"):
-            tool_names = {t.name for t in server.mcp.list_tools()}
-
-        # We only assert if FastMCP exposes the registered tools
-        # (version-dependent); at minimum, no exception should be raised.
-        assert True  # Registration did not raise
+        tool_names = {tool.name for tool in await server.mcp.list_tools()}
+        assert {"search_knowledge_base", "get_system_context"} <= tool_names
 
     def test_registration_does_not_raise(self):
         server = RemoteMCPServer(app_settings=_make_app_settings())

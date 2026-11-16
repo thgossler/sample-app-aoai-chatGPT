@@ -22,8 +22,14 @@ fi
 echo ""
 echo "Restoring backend python packages"
 echo ""
-python -m pip install -r requirements.txt
-if [ $? -ne 0 ]; then
+if ! python -m pip install -r requirements.txt; then
     echo "Failed to restore backend python packages"
-    exit $?
+    exit 1
+fi
+
+if ! python -c 'from fastmcp import Client, FastMCP' 2>/dev/null; then
+    echo "Repairing FastMCP installation"
+    fastmcp_slim_version=$(python -c 'from importlib.metadata import version; print(version("fastmcp-slim"))') || exit 1
+    python -m pip install --force-reinstall --no-deps "fastmcp-slim==$fastmcp_slim_version" || exit 1
+    python -c 'from fastmcp import Client, FastMCP' || exit 1
 fi
