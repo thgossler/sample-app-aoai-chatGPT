@@ -23,6 +23,7 @@ const Layout = () => {
   const [logo, setLogo] = useState('')
   const appStateContext = useContext(AppStateContext)
   const ui = appStateContext?.state.frontendSettings?.ui
+  const headerDisclaimer = sanitizeHtml(ui?.header_html_disclaimer || '')
 
   const handleShareClick = () => {
     setIsSharePanelOpen(true)
@@ -78,6 +79,9 @@ const Layout = () => {
 
   return (
     <div className={styles.layout}>
+      {headerDisclaimer.trim() && (
+        <div className={styles.headerDisclaimer} dangerouslySetInnerHTML={{ __html: headerDisclaimer }} />
+      )}
       <header className={styles.header} role={'banner'}>
         <Stack horizontal verticalAlign="center" horizontalAlign="space-between">
           <Stack horizontal verticalAlign="center">

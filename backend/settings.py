@@ -50,6 +50,7 @@ class _UiSettings(BaseSettings):
     favicon: str = "/favicon.ico"
     show_share_button: bool = True
     show_chat_history_button: bool = True
+    header_html_disclaimer: Optional[str] = None
     footer_html_left: Optional[str] = None
     footer_html_middle: Optional[str] = None
     footer_html_right: Optional[str] = None
@@ -206,7 +207,7 @@ class _AzureOpenAISettings(BaseSettings):
             self.endpoint = f"https://{self.resource}.openai.azure.com"
             return self
         
-        raise ValidationError("AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_RESOURCE is required")
+        raise ValueError("AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_RESOURCE is required")
         
     def extract_embedding_dependency(self) -> Optional[dict]:
         if self.embedding_name:

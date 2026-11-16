@@ -152,6 +152,7 @@ export type UI = {
   chat_logo?: string
   show_share_button?: boolean
   show_chat_history_button?: boolean
+  header_html_disclaimer?: string
   footer_html_left?: string
   footer_html_middle?: string
   footer_html_right?: string

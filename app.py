@@ -254,6 +254,7 @@ frontend_settings = {
         "chat_description": app_settings.ui.chat_description,
         "show_share_button": app_settings.ui.show_share_button,
         "show_chat_history_button": app_settings.ui.show_chat_history_button,
+        "header_html_disclaimer": app_settings.ui.header_html_disclaimer,
         "footer_html_left": app_settings.ui.footer_html_left,
         "footer_html_middle": app_settings.ui.footer_html_middle,
         "footer_html_right": app_settings.ui.footer_html_right,

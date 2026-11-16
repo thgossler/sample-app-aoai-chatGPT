@@ -4,6 +4,18 @@
   height: 100vh;
 }
 
+.headerDisclaimer {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid #806b30;
+  background: #4b4633;
+  color: #ffdb70;
+  text-align: center;
+}
+
 .header {
   background-color: var(--color-bg-secondary);
 }
