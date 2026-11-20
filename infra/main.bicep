@@ -60,6 +60,9 @@ param remoteMcpServerEnabled bool = false
 @description('Entra ID Application (client) ID of the MCP server app registration.')
 param remoteMcpAuthClientId string = ''
 
+@description('Canonical public MCP endpoint without a trailing slash. Defaults to the App Service /mcp URL.')
+param remoteMcpServerUrl string = ''
+
 @description('Comma-separated list of client IDs allowed to call the MCP server (e.g. VS Code client ID).')
 param remoteMcpAuthAllowedClientIds string = 'aebc6443-996d-45c2-90f0-388ff96faa56'
 
@@ -108,6 +111,7 @@ module appServicePlan 'core/host/appserviceplan.bicep' = {
 // The application frontend
 var appServiceName = !empty(backendServiceName) ? backendServiceName : '${abbrs.webSitesAppService}backend-${resourceToken}'
 var authIssuerUri = '${environment().authentication.loginEndpoint}${tenant().tenantId}/v2.0'
+var remoteMcpCanonicalUrl = !empty(remoteMcpServerUrl) ? remoteMcpServerUrl : 'https://${appServiceName}.azurewebsites.net/mcp'
 module backend 'core/host/appservice.bicep' = {
   name: 'web'
   scope: resourceGroup
@@ -149,10 +153,10 @@ module backend 'core/host/appservice.bicep' = {
       AZURE_OPENAI_STREAM: openAIStream
       // remote mcp server (disabled by default — set remoteMcpServerEnabled=true to activate)
       REMOTE_MCP_SERVER_ENABLED: remoteMcpServerEnabled
-      REMOTE_MCP_SERVER_URL: 'https://${appServiceName}.azurewebsites.net'
+      REMOTE_MCP_SERVER_URL: remoteMcpCanonicalUrl
       REMOTE_MCP_AUTH_TENANT_ID: tenant().tenantId
       REMOTE_MCP_AUTH_CLIENT_ID: remoteMcpAuthClientId
-      REMOTE_MCP_AUTH_AUDIENCE: !empty(remoteMcpAuthClientId) ? 'api://${remoteMcpAuthClientId}' : ''
+      REMOTE_MCP_AUTH_AUDIENCE: !empty(remoteMcpAuthClientId) ? remoteMcpCanonicalUrl : ''
       REMOTE_MCP_AUTH_ALLOWED_CLIENT_IDS: remoteMcpAuthAllowedClientIds
     }
   }

@@ -173,8 +173,8 @@ class TestEntraIDTokenValidator:
     @pytest.mark.asyncio
     async def test_malformed_jwt_rejected(self):
         validator = self._make_validator()
-        with pytest.raises(AuthError):
-            await validator.validate_token("not.a.jwt")
+        with pytest.raises(AuthError, match="not a valid JWT"):
+            await validator.validate_token("opaque-access-token")
 
 
 class TestScopeAndRoleChecks:
