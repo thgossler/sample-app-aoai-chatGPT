@@ -227,14 +227,15 @@ Expected response (abbreviated):
   "servers": {
     "my-chat-app": {
       "type": "http",
-      "url": "https://your-chat-app.azurewebsites.net/mcp",
-      "oauth": {
-        "clientId": "aebc6443-996d-45c2-90f0-388ff96faa56"
-      }
+      "url": "https://your-chat-app.azurewebsites.net/mcp"
     }
   }
 }
 ```
+
+No client ID or service principal is configured in `mcp.json`. VS Code uses its
+own Microsoft-published public client ID after discovering the Entra
+authorization server and MCP scopes.
 
 After changing the app registration or resource URL, stop the MCP server, sign
 out and back in to Microsoft in VS Code, and run **Authentication: Remove

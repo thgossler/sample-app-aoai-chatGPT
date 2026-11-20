@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
 
+from app import _MCPASGIDispatch
 from backend.mcp_server.auth_middleware import AuthError
 from backend.mcp_server.remote_mcp_server import (
     _MCPAuthStarletteMiddleware,
@@ -33,6 +34,19 @@ from backend.mcp_server.remote_mcp_server import (
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_mcp_dispatch_preserves_canonical_path():
+    quart_app = AsyncMock()
+    mcp_app = AsyncMock()
+    dispatch = _MCPASGIDispatch(quart_app, mcp_app)
+    scope = {"type": "http", "path": "/mcp"}
+
+    await dispatch(scope, None, None)
+
+    mcp_app.assert_awaited_once_with(scope, None, None)
+    quart_app.assert_not_awaited()
+
 
 def _make_mcp_cfg(
     tenant_id="tenant-123",
