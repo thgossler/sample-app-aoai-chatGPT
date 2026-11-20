@@ -550,6 +550,7 @@ by Microsoft Entra ID (OAuth 2.1).
    REMOTE_MCP_SERVER_URL=https://your-app.azurewebsites.net/mcp
    REMOTE_MCP_AUTH_TENANT_ID=<tenant-id>
    REMOTE_MCP_AUTH_CLIENT_ID=<server-app-client-id>
+   REMOTE_MCP_AUTH_AUDIENCE=https://your-app.azurewebsites.net/mcp
    # Allow VS Code's built-in client ID plus your own client(s):
    REMOTE_MCP_AUTH_ALLOWED_CLIENT_IDS=aebc6443-996d-45c2-90f0-388ff96faa56
    ```

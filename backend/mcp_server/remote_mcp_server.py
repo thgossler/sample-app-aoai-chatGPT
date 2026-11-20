@@ -228,11 +228,17 @@ class _MCPAuthStarletteMiddleware(BaseHTTPMiddleware):
             "Authorization"
         )
         try:
-            claims = await self._validator.validate_token(
-                auth_header.split(" ", 1)[1]
-                if auth_header and auth_header.lower().startswith("bearer ")
-                else ""
-            )
+            if not auth_header:
+                raise AuthError("Missing Authorization header", status_code=401)
+
+            parts = auth_header.split()
+            if len(parts) != 2 or parts[0].lower() != "bearer":
+                raise AuthError(
+                    "Authorization header must be 'Bearer <token>'",
+                    status_code=401,
+                )
+
+            claims = await self._validator.validate_token(parts[1])
             if not EntraIDTokenValidator.has_mcp_access(claims):
                 return JSONResponse(
                     {"error": "Forbidden", "detail": "Insufficient MCP scope/role"},

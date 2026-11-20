@@ -57,16 +57,19 @@ issued *for*).
 ### 1a — Expose an API (define scopes)
 
 1. In the app registration, go to **Expose an API**.
-2. Click **Set** next to *Application ID URI* — accept the default
-   `api://<client-id>` or use a custom URI.
-3. Click **Add a scope** and create the following:
+2. Set *Application ID URI* to the exact canonical MCP endpoint, for example
+   `https://your-chat-app.azurewebsites.net/mcp`. Do not add a trailing slash.
+   This URL must match the `REMOTE_MCP_SERVER_URL` and the PRM `resource` value
+   character for character.
+3. In the app manifest, set `requestedAccessTokenVersion` to `2`.
+4. Click **Add a scope** and create the following:
 
 | Scope | Who can consent | Display name | Description |
 | ----- | --------------- | ------------ | ----------- |
 | `MCP.Tools.Read` | Admins and users | Read MCP tools | Search knowledge base & read context |
 | `MCP.Tools.Execute` | Admins and users | Execute MCP tools | Call any tool via MCP |
 
-4. Optionally create **App roles** (for service-level access without user consent):
+5. Optionally create **App roles** (for service-level access without user consent):
 
    Go to **App roles** → **Create app role**:
 
@@ -169,10 +172,10 @@ REMOTE_MCP_AUTH_ALLOWED_CLIENT_IDS=aebc6443-996d-45c2-90f0-388ff96faa56,<claude-
 # Set to true if you registered for multi-tenant in Step 1
 # REMOTE_MCP_AUTH_MULTI_TENANT=false
 
-# Optional overrides — auto-derived from tenant/client IDs when left blank:
-# REMOTE_MCP_AUTH_AUDIENCE=api://<client-id>
-# REMOTE_MCP_AUTH_ISSUER=https://sts.windows.net/<tenant-id>/
-# REMOTE_MCP_AUTH_DEFAULT_SCOPE=api://<client-id>/.default
+# Must exactly match the server app's Application ID URI and server URL.
+REMOTE_MCP_AUTH_AUDIENCE=https://your-chat-app.azurewebsites.net/mcp
+REMOTE_MCP_AUTH_DEFAULT_SCOPE=https://your-chat-app.azurewebsites.net/mcp/MCP.Tools.Execute
+# REMOTE_MCP_AUTH_ISSUER=https://login.microsoftonline.com/<tenant-id>/v2.0
 ```
 
 > **No client secret is ever sent to the MCP server.** The server validates
@@ -197,8 +200,8 @@ Expected response (abbreviated):
     "https://login.microsoftonline.com/<tenant-id>/v2.0"
   ],
   "scopes_supported": [
-    "api://<client-id>/MCP.Tools.Read",
-    "api://<client-id>/MCP.Tools.Execute"
+    "https://your-chat-app.azurewebsites.net/mcp/MCP.Tools.Read",
+    "https://your-chat-app.azurewebsites.net/mcp/MCP.Tools.Execute"
   ],
   "bearer_methods_supported": ["header"],
   "resource_documentation": "https://your-chat-app.azurewebsites.net/docs/mcp"
@@ -217,20 +220,25 @@ Expected response (abbreviated):
 5. After sign-in, the MCP tools appear in the Copilot tool list (`search_knowledge_base`,
    `get_system_context`, etc.).
 
-### VS Code `settings.json` (manual configuration)
+### VS Code `.vscode/mcp.json` (manual configuration)
 
 ```json
 {
-  "mcp": {
-    "servers": {
-      "my-chat-app": {
-        "type": "http",
-        "url": "https://your-chat-app.azurewebsites.net/mcp"
+  "servers": {
+    "my-chat-app": {
+      "type": "http",
+      "url": "https://your-chat-app.azurewebsites.net/mcp",
+      "oauth": {
+        "clientId": "aebc6443-996d-45c2-90f0-388ff96faa56"
       }
     }
   }
 }
 ```
+
+After changing the app registration or resource URL, stop the MCP server, sign
+out and back in to Microsoft in VS Code, and run **Authentication: Remove
+Dynamic Authentication Providers** once to clear stale MCP authentication state.
 
 ---
 
@@ -598,9 +606,13 @@ if __name__ == "__main__":
 ### `401 Unauthorized` — `invalid_token`
 
 - Token `aud` does not match `REMOTE_MCP_AUTH_AUDIENCE`.
-  Make sure the client requests a token for `api://<client-id>` (not the default
-  Microsoft Graph audience).
-- Token expired. Refresh and retry.
+  Make sure the client requests a token for the exact canonical `/mcp` URL, not
+  an `api://` URI or the Microsoft Graph audience.
+- Token expired or VS Code is reusing stale Microsoft authentication state. Sign
+  out and back in, then use **Authentication: Remove Dynamic Authentication
+  Providers**, stop the MCP server, and start it again.
+- Token is opaque or malformed. Entra access tokens for this resource must be
+  three-part JWTs; do not paste ID tokens, refresh tokens, or API keys.
 
 ### `403 Forbidden` — `insufficient_scope`
 

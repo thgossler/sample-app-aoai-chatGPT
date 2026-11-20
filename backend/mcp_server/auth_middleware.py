@@ -166,7 +166,7 @@ class EntraIDTokenValidator:
         try:
             unverified_header = jwt.get_unverified_header(token)
         except jwt.exceptions.DecodeError as exc:
-            raise AuthError(f"Malformed JWT header: {exc}") from exc
+            raise AuthError("Access token is not a valid JWT") from exc
 
         kid = unverified_header.get("kid")
         alg = unverified_header.get("alg", "RS256")

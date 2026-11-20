@@ -322,6 +322,30 @@ class TestMCPAuthMiddlewareChallenges:
         )
 
     @pytest.mark.asyncio
+    async def test_missing_header_returns_401_without_validating_token(self):
+        validator = MagicMock()
+        middleware = self._middleware(validator)
+
+        response = await middleware.dispatch(self._request(), AsyncMock())
+
+        assert response.status_code == 401
+        assert "Missing Authorization header" in response.body.decode()
+        validator.validate_token.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_bearer_header_returns_401_without_validating_token(self):
+        validator = MagicMock()
+        middleware = self._middleware(validator)
+
+        response = await middleware.dispatch(
+            self._request({"authorization": "Basic credentials"}), AsyncMock()
+        )
+
+        assert response.status_code == 401
+        assert "Authorization header must be" in response.body.decode()
+        validator.validate_token.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_401_challenge_includes_invalid_token_metadata_and_scope(self):
         validator = MagicMock()
         validator.validate_token = AsyncMock(
